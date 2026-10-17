@@ -454,6 +454,7 @@ class RaceTraceGPS extends HTMLElement {
    }
    const {traces,events,aligned,referenceId,ref,markers,stopped,
     selected,typical,learned,cleanLaps}=this.processed;
+   const useLearned=this.referenceMode==='learned'&&!!learned;
    const firstCross=events.filter(e=>String(e[0])===referenceId&&e[1]===2)[0];
    const originTime=firstCross?.[2]??crossingAt(ref,1);
    // Normalised lap-time shape is shared by all drivers. Anchor it to
