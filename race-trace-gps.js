@@ -726,7 +726,7 @@ class RaceTraceGPS extends HTMLElement {
    status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
     aligned.aligned.length+' aligned · reference car #'+referenceId+
     ' · '+(useLearned?'learned '+selected.length+' clean laps ('+typical.toFixed(1)+'s)':'leader GPS fallback')+
-    ' · '+markers.size+' retired (X) · '+stopped+' stopped · gap at equal distance'+(retirementDebug?' · X: '+retirementDebug:'');
+    ' · '+markers.size+' retired · '+stopped+' stopped · gap at equal distance';
   }catch(e){status.textContent='Experimental diagnostics: '+e.message;}
  }
 }
