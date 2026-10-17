@@ -4,6 +4,16 @@ Experimental Home Assistant GPS-based F1 race trace, independently installable t
 
 **Status:** early prototype. This now plots time gap at equal race distance, using the furthest-progressed car as a reference. It is an initial gap renderer, **not yet** the full approved Singapore visualisation. It currently downloads both full recordings every five seconds, so do not leave it running for long races until incremental loading is added. Production `custom:f1-race-trace` is unaffected.
 
+## Fast development via GitHub Pages
+
+The `.github/workflows/pages.yml` workflow publishes `race-trace-gps.js` on each main-branch update. Enable **Settings → Pages → Build and deployment → GitHub Actions** once. After the deployment succeeds, the development module is available at:
+
+`https://njharrison.github.io/race-trace-gps/race-trace-gps.js`
+
+For development, replace the HACS dashboard resource with this **JavaScript module** resource (do not load both simultaneously). Append a new `?v=<commit-sha>` after each deployment to force a fresh module request, and reload the entire dashboard tab so the browser creates the updated custom element. GitHub Pages deployments may take a short while. Keep HACS installed for stable releases but do not simultaneously register the HACS and Pages resources.
+
+This bypasses HACS file delivery, not the need to reload an already-open browser page. If the Pages script fails to load, restore the HACS resource.
+
 ## Install through HACS
 
 1. Open **HACS → ⋮ → Custom repositories**.
