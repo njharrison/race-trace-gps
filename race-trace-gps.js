@@ -849,7 +849,7 @@ class RaceTraceGPS extends HTMLElement {
    if(!this.viewport)this.viewport={xMin:minX,xMax:maxX,yMin:minGap,yMax:maxGap};
    const view=this.viewport;
    const x=v=>52+(v-view.xMin)/Math.max(.001,view.xMax-view.xMin)*(w-76);
-   const y=v=>20+(v-view.yMin)/Math.max(.001,view.yMax-view.yMin)*(h-60);
+   const y=v=>20+(view.yMax-v)/Math.max(.001,view.yMax-view.yMin)*(h-60);
    ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.font='12px system-ui';
    for(let lap=Math.ceil(view.xMin);lap<=view.xMax;lap++){
     ctx.beginPath();ctx.moveTo(x(lap),15);ctx.lineTo(x(lap),h-32);ctx.stroke();
