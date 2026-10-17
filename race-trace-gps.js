@@ -162,7 +162,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceOffi
 class RaceTraceGPS extends HTMLElement {
  constructor(){
   super();this.attachShadow({mode:'open'});this.gps=null;this.timing=null;
-  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;
+  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.pitEnabled=true;
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
@@ -190,7 +190,7 @@ class RaceTraceGPS extends HTMLElement {
  draw(){
   if(!this.shadowRoot||!this.config)return;
   if(!this.shadowRoot.querySelector('canvas')){
-   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:auto;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer}.legend button.off{opacity:.35}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="showall">Show all drivers</button></div><canvas width="1100" height="460"></canvas><div class="legend" id="legend"></div></ha-card>';
+   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:auto;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button,.controls input{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.pit{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;font:12px system-ui}.pit input{width:75px}.pitlog{font:12px system-ui;margin:5px 0;color:var(--secondary-text-color,#aab)}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer}.legend button.off{opacity:.35}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="showall">Show all drivers</button></div><div class="pit"><label><input type="checkbox" id="pitshow" checked> Pit projections</label><label>Driver <select id="pitdriver"></select></label><label>Pit loss <input id="pitloss" type="number" min="0" max="180" step="0.1" placeholder="—"> s</label><button id="pitreset" disabled>Calculating…</button></div><div class="pitlog" id="pitlog"></div><canvas width="1100" height="460"></canvas><div class="legend" id="legend"></div></ha-card>';
   }
   const status=this.shadowRoot.querySelector('#status'),canvas=this.shadowRoot.querySelector('canvas');
   const refSelect=this.shadowRoot.querySelector('#reference');
@@ -390,6 +390,82 @@ class RaceTraceGPS extends HTMLElement {
     const filtered=pts.filter(p=>p[0]>=1);
     if(filtered.length<2)series.delete(id);else series.set(id,filtered);
    }
+   // Provisional pit detection from GPS lap-time excess. Compare each driver's
+   // complete laps against their own clean-lap median; use two-lap windows
+   // to capture entry and exit across the timing line. A lap is a candidate
+   // only when GPS shows a sustained stop or a pronounced slowdown.
+   const pitStops=[];
+   for(const [id,track] of traces){
+    const completed=[];
+    for(let lap=Math.max(1,Math.ceil(track[0][1]));lap<track.at(-1)[1];lap++){
+     const t0=crossingAt(track,lap),t1=crossingAt(track,lap+1);
+     if(Number.isFinite(t0)&&Number.isFinite(t1)&&t1>t0)
+      completed.push({lap,t0,t1,duration:t1-t0});
+    }
+    const normal=completed.map(p=>p.duration).filter(v=>v>75&&v<180).sort((a,b)=>a-b);
+    if(normal.length<4)continue;
+    // Lower-half median resists long pit laps, safety cars and traffic.
+    const base=normal[Math.floor(normal.length*.35)];
+    const gps=gpsByDriver.get(id)||[];
+    for(const p of completed){
+     const slowdown=p.duration-base;
+     if(slowdown<9||p.duration>base+110)continue;
+     const inWindow=gps.filter(g=>g.t>=p.t0-5&&g.t<=p.t1+5);
+     let stationary=false;
+     for(let j=0;j+3<inWindow.length;j++){
+      const a=inWindow[j];
+      for(let k=j+3;k<inWindow.length&&inWindow[k].t-a.t<=45;k++){
+       if(inWindow[k].t-a.t>=3&&Math.hypot(inWindow[k].x-a.x,inWindow[k].y-a.y)<5){
+        stationary=true;break;
+       }
+      }
+      if(stationary)break;
+     }
+     if(!stationary)continue;
+     // Exclude stops overlapping official neutralisation periods.
+     const neutral=this.timing.samples.some(s=>s.timestamp>=p.t0&&s.timestamp<=p.t1&&
+      /^(SC|VSC|SAFETY CAR|VIRTUAL SAFETY CAR)$/i.test(String(s.track_status||'')));
+     pitStops.push({id,lap:p.lap,loss:slowdown,neutral,method:'lap-excess'});
+    }
+   }
+   const validStops=pitStops.filter(p=>!p.neutral&&p.loss>=9&&p.loss<=60)
+    .sort((a,b)=>a.loss-b.loss);
+   const quantile=(values,q)=>{
+    if(!values.length)return null;
+    const index=(values.length-1)*q,lo=Math.floor(index),f=index-lo;
+    return values[lo].loss*(1-f)+values[Math.min(lo+1,values.length-1)].loss*f;
+   };
+   const expected=quantile(validStops,.25);
+   const pitDriverSelect=this.shadowRoot.querySelector('#pitdriver');
+   const oldDriver=this.pitDriver;
+   pitDriverSelect.replaceChildren();
+   for(const id of series.keys()){
+    const opt=document.createElement('option');
+    opt.value=id;opt.textContent='#'+id;pitDriverSelect.append(opt);
+   }
+   if(!series.has(this.pitDriver))this.pitDriver=series.keys().next().value;
+   pitDriverSelect.value=this.pitDriver;
+   pitDriverSelect.onchange=()=>{this.pitDriver=pitDriverSelect.value;this.draw();};
+   const pitInput=this.shadowRoot.querySelector('#pitloss');
+   const pitReset=this.shadowRoot.querySelector('#pitreset');
+   const effectiveLoss=this.pitManual===null?expected:this.pitManual;
+   if(document.activeElement!==pitInput)pitInput.value=Number.isFinite(effectiveLoss)?effectiveLoss.toFixed(1):'';
+   pitInput.onchange=()=>{
+    const v=Number(pitInput.value);
+    if(pitInput.value!==''&&Number.isFinite(v)&&v>=0&&v<=180){
+     this.pitManual=Math.round(v*10)/10;this.draw();
+    }
+   };
+   pitReset.textContent=Number.isFinite(expected)?'Use '+expected.toFixed(1)+'s':'No estimate yet';
+   pitReset.disabled=!Number.isFinite(expected);
+   pitReset.onclick=()=>{this.pitManual=null;this.draw();};
+   const pitShow=this.shadowRoot.querySelector('#pitshow');
+   pitShow.checked=this.pitEnabled;
+   pitShow.onchange=()=>{this.pitEnabled=pitShow.checked;this.draw();};
+   this.shadowRoot.querySelector('#pitlog').textContent=
+    'Pit-loss log (provisional lap-excess method): '+
+    (pitStops.length?pitStops.map(p=>'#'+p.id+' L'+p.lap+' '+p.loss.toFixed(1)+'s'+(p.neutral?' [SC/VSC]':'')).join(' · '):'No verified candidates')+
+    ' · '+validStops.length+' eligible · P25 '+(Number.isFinite(expected)?expected.toFixed(1)+'s':'n/a');
    const all=[...series.values()].flat();
    if(!all.length)throw Error('No overlapping race distances for gap calculation');
    const minX=Math.min(...all.map(p=>p[0])),maxX=Math.max(...all.map(p=>p[0]));
@@ -493,6 +569,22 @@ class RaceTraceGPS extends HTMLElement {
     points.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1])):ctx.moveTo(x(p[0]),y(p[1])));
     ctx.stroke();
 
+   }
+   // Both projections are time shifts at the same race distance:
+   // +loss: where the selected driver emerges after stopping;
+   // -loss: the symmetric boundary for a rival stopping behind them.
+   if(this.pitEnabled&&Number.isFinite(effectiveLoss)&&effectiveLoss>=0){
+    const chosen=series.get(this.pitDriver);
+    if(chosen?.length){
+     for(const sign of [-1,1]){
+      ctx.save();ctx.strokeStyle=sign>0?'#fbbf24':'#22d3ee';
+      ctx.lineWidth=2.5;ctx.globalAlpha=.95;ctx.setLineDash(sign>0?[9,5]:[3,5]);
+      ctx.beginPath();
+      chosen.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1]+sign*effectiveLoss)):
+       ctx.moveTo(x(p[0]),y(p[1]+sign*effectiveLoss)));
+      ctx.stroke();ctx.restore();
+     }
+    }
    }
    ctx.restore();
    // Render retirement crosses last so other drivers cannot obscure them.
