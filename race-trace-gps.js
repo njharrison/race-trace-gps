@@ -480,19 +480,31 @@ class RaceTraceGPS extends HTMLElement {
     const referenceTime=timeAtDistance(point[1]);
     if(!Number.isFinite(referenceTime))continue;
     const px=x(point[1]),py=y(point[2]-referenceTime);
-    if(px<52||px>w-18||py<15||py>h-32)continue;
+    // Keep an off-scale retirement visible at the plot edge instead of
+    // silently discarding it under percentile gap-axis clipping.
+    if(!Number.isFinite(px)||!Number.isFinite(py))continue;
+    const offscale=py<15||py>h-32;
+    const visibleX=Math.max(63,Math.min(w-29,px));
+    const visibleY=Math.max(27,Math.min(h-45,py));
     const size=11;
     ctx.lineCap='round';ctx.setLineDash([]);
-    ctx.beginPath();ctx.moveTo(px-size,py-size);ctx.lineTo(px+size,py+size);
-    ctx.moveTo(px-size,py+size);ctx.lineTo(px+size,py-size);
+    ctx.beginPath();ctx.moveTo(visibleX-size,visibleY-size);ctx.lineTo(visibleX+size,visibleY+size);
+    ctx.moveTo(visibleX-size,visibleY+size);ctx.lineTo(visibleX+size,visibleY-size);
     ctx.strokeStyle='#ffffff';ctx.lineWidth=8;ctx.stroke();
     ctx.strokeStyle='#ef4444';ctx.lineWidth=4;ctx.stroke();
+    ctx.font='bold 13px system-ui';ctx.fillStyle='#fff';
+    ctx.fillText('#'+id+(offscale?' (off scale)':''),Math.min(w-135,visibleX+15),Math.max(20,visibleY-9));
     ctx.lineCap='butt';
    }
+   const retirementDebug=[...markers].map(([id,p])=>{
+    const t=timeAtDistance(p[1]),g=Number.isFinite(t)?p[2]-t:null;
+    return '#'+id+' lap '+p[1].toFixed(2)+' gap '+(g===null?'n/a':g.toFixed(1)+'s')+
+     (g!==null&&(g<minGap||g>maxGap)?' OFF-SCALE':'');
+   }).join('; ');
    status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
     aligned.aligned.length+' aligned · reference car #'+referenceId+
     ' · '+(useLearned?'learned '+selected.length+' clean laps ('+typical.toFixed(1)+'s)':'leader GPS fallback')+
-    ' · '+markers.size+' retired (X) · '+stopped+' stopped · gap at equal distance';
+    ' · '+markers.size+' retired (X) · '+stopped+' stopped · gap at equal distance'+(retirementDebug?' · X: '+retirementDebug:'');
   }catch(e){status.textContent='Experimental diagnostics: '+e.message;}
  }
 }
