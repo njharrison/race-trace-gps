@@ -447,12 +447,48 @@ class RaceTraceGPS extends HTMLElement {
    const learned=selected.length>=5?Array.from({length:101},(_,j)=>
     j===0?0:j===100?1:median(selected.map(l=>l.bins[j]))):null;
    if(learned)for(let j=1;j<101;j++)learned[j]=Math.max(learned[j],learned[j-1]+1e-7);
+   // Keep raw GPS for calibration, pit detection and retirement markers.
+   // Correct the displayed crossing-time trajectories to official timing at
+   // each finish-line crossing, interpolating residuals within each lap.
+   const correctedTraces=new Map();
+   let correctedAnchors=0,correctedDrivers=0;
+   for(const [id,track] of traces){
+    const anchors=[];
+    for(const [driver,lap,officialTime] of events){
+     if(String(driver)!==String(id)||!Number.isFinite(officialTime))continue;
+     const distance=lap-1;
+     const gpsTime=crossingAt(track,distance);
+     if(!Number.isFinite(gpsTime))continue;
+     const residual=officialTime-gpsTime;
+     // Ignore gross misidentified crossings rather than deform a full lap.
+     if(Math.abs(residual)>5)continue;
+     anchors.push({d:distance,offset:residual});
+    }
+    anchors.sort((a,b)=>a.d-b.d);
+    const unique=anchors.filter((p,i)=>!i||p.d>anchors[i-1].d);
+    correctedAnchors+=unique.length;
+    if(unique.length)correctedDrivers++;
+    let cursor=0;
+    correctedTraces.set(id,track.map(p=>{
+     const d=p[1];
+     while(cursor+1<unique.length&&unique[cursor+1].d<d)cursor++;
+     let offset=0;
+     if(unique.length){
+      const a=unique[cursor],b=unique[Math.min(cursor+1,unique.length-1)];
+      if(d<=unique[0].d)offset=unique[0].offset;
+      else if(d>=unique.at(-1).d)offset=unique.at(-1).offset;
+      else offset=a.offset+(b.offset-a.offset)*(d-a.d)/(b.d-a.d);
+     }
+     return [p[0],p[1],p[2]+offset];
+    }));
+   }
 
-    return {traces,events,aligned,referenceId,ref,markers,stopped,
+
+    return {traces,correctedTraces,correctedAnchors,correctedDrivers,events,aligned,referenceId,ref,markers,stopped,
       selected,typical,learned,cleanLaps};
     })();
    }
-   const {traces,events,aligned,referenceId,ref,markers,stopped,
+   const {traces,correctedTraces,correctedAnchors,correctedDrivers,events,aligned,referenceId,ref,markers,stopped,
     selected,typical,learned,cleanLaps}=this.processed;
    // Independent validation: compare interpolated GPS crossing times with
    // official lap-transition timestamps at the same finish-line distance.
@@ -512,7 +548,7 @@ class RaceTraceGPS extends HTMLElement {
    }
    // Sample every driver's crossing time at common race distances.
    const series=new Map(),gridStep=0.005;
-   for(const [id,track] of traces){
+   for(const [id,track] of correctedTraces){
     if(track.length<2)continue;
     const pts=[];
     let cursor=1;
@@ -783,7 +819,7 @@ class RaceTraceGPS extends HTMLElement {
    status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
     aligned.aligned.length+' aligned · reference car #'+referenceId+
     ' · '+(useLearned?'learned '+selected.length+' clean laps ('+typical.toFixed(1)+'s)':'leader GPS fallback')+
-    ' · '+markers.size+' retired · '+stopped+' stopped · gap at equal distance'+validationSummary;
+    ' · '+markers.size+' retired · '+stopped+' stopped · '+correctedAnchors+' timing anchors / '+correctedDrivers+' cars · gap at equal distance'+validationSummary;
   }catch(e){status.textContent='Experimental diagnostics: '+e.message;}
  }
 }
