@@ -286,11 +286,64 @@ class RaceTraceGPS extends HTMLElement {
     ctx.beginPath();ctx.moveTo(50,y(g));ctx.lineTo(w-18,y(g));ctx.stroke();
     ctx.fillStyle='#aab';ctx.fillText(g+'s',4,y(g)+4);
    }
+   // Neutralisation periods from recorded track status; status changes are
+   // authoritative and must not be inferred from a driver's speed alone.
+   const periods=[];
+   let active=null;
+   for(const sample of this.timing.samples){
+    const value=String(sample.track_status||'').toUpperCase();
+    const type=/^(VSC|VIRTUAL SAFETY CAR)$/.test(value)?'VSC':
+      /^(SC|SAFETY CAR)$/.test(value)?'SC':null;
+    if(type!==active?.type){
+     if(active){active.end=sample.timestamp;periods.push(active);}
+     active=type?{type,start:sample.timestamp}:null;
+    }
+   }
+   if(active){active.end=this.timing.samples.at(-1).timestamp;periods.push(active);}
+   const refDistanceAtTime=t=>{
+    if(t<ref[0][2]||t>ref.at(-1)[2])return null;
+    let lo=0,hi=ref.length-1;
+    while(hi-lo>1){const mid=(lo+hi)>>1;if(ref[mid][2]<t)lo=mid;else hi=mid;}
+    const dt=ref[hi][2]-ref[lo][2];
+    return dt>0?ref[lo][1]+(t-ref[lo][2])/dt*(ref[hi][1]-ref[lo][1]):null;
+   };
+   const lapDurations=[];
+   for(let lap=Math.ceil(ref[0][1]);lap<ref.at(-1)[1];lap++){
+    const start=timeAtDistance(lap),end=timeAtDistance(lap+1);
+    if(start!==null&&end!==null&&end>start&&end-start<240)lapDurations.push(end-start);
+   }
+   lapDurations.sort((a,b)=>a-b);
+   const lapSeconds=lapDurations[Math.floor(lapDurations.length/2)]||100;
+   ctx.save();ctx.beginPath();ctx.rect(52,15,w-70,h-47);ctx.clip();
+   // A time interval maps to diagonal boundaries in gap/distance space.
+   for(const p of periods){
+    if(!(p.end>p.start))continue;
+    const start=refDistanceAtTime(p.start),end=refDistanceAtTime(p.end);
+    if(start===null||end===null)continue;
+    ctx.fillStyle=p.type==='VSC'?'rgba(234,179,8,.16)':'rgba(251,146,60,.16)';
+    ctx.strokeStyle=p.type==='VSC'?'#eab308':'#fb923c';
+    ctx.beginPath();
+    ctx.moveTo(x(start+minGap/lapSeconds),y(minGap));
+    ctx.lineTo(x(end+minGap/lapSeconds),y(minGap));
+    ctx.lineTo(x(end+maxGap/lapSeconds),y(maxGap));
+    ctx.lineTo(x(start+maxGap/lapSeconds),y(maxGap));
+    ctx.closePath();ctx.fill();
+    ctx.setLineDash([5,5]);ctx.beginPath();
+    ctx.moveTo(x(start+minGap/lapSeconds),y(minGap));
+    ctx.lineTo(x(start+maxGap/lapSeconds),y(maxGap));ctx.stroke();ctx.setLineDash([]);
+    ctx.font='bold 13px system-ui';ctx.fillText(p.type,x(start)+4,30);
+   }
    const colors=['#fb7185','#38bdf8','#a3e635','#fbbf24','#c084fc','#2dd4bf','#f472b6','#93c5fd'];
-   let i=0;ctx.save();ctx.beginPath();ctx.rect(52,15,w-70,h-47);ctx.clip();
+   let i=0;
    for(const [id,points] of series){
-    ctx.strokeStyle=id===referenceId?'#fff':colors[i%colors.length];
-    i++;ctx.lineWidth=id===referenceId?2.5:1.5;ctx.beginPath();
+    const color=id===referenceId?'#fff':colors[i%colors.length];i++;
+    // A lapped car has a dashed counterpart one lap and one reference
+    // lap-time away. Draw separately; never connect the two curves.
+    ctx.strokeStyle=color;ctx.lineWidth=1.15;ctx.globalAlpha=.55;ctx.setLineDash([5,7]);
+    ctx.beginPath();
+    points.forEach((p,j)=>j?ctx.lineTo(x(p[0]+1),y(p[1]+lapSeconds)):ctx.moveTo(x(p[0]+1),y(p[1]+lapSeconds)));
+    ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+    ctx.lineWidth=id===referenceId?2.5:1.5;ctx.beginPath();
     points.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1])):ctx.moveTo(x(p[0]),y(p[1])));
     ctx.stroke();
    }
