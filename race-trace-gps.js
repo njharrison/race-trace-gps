@@ -415,7 +415,7 @@ class RaceTraceGPS extends HTMLElement {
     ctx.beginPath();
     points.forEach((p,j)=>j?ctx.lineTo(x(p[0]+1),y(p[1]+lapSeconds)):ctx.moveTo(x(p[0]+1),y(p[1]+lapSeconds)));
     ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
-    ctx.lineWidth=id===referenceId?2.5:1.5;ctx.beginPath();
+    ctx.lineWidth=id===referenceId&&!useLearned?2.5:1.5;ctx.beginPath();
     points.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1])):ctx.moveTo(x(p[0]),y(p[1])));
     ctx.stroke();
    }
