@@ -267,20 +267,22 @@ class RaceTraceGPS extends HTMLElement {
     const bounded=traces.get(id);
     if(!bounded.length)continue;
     const endTime=bounded.at(-1)[2];
-    let moving=0;
-    // Latest GPS sample that changed physical position by at least 1 metre.
-    // The last moving point is the sample immediately before the stop.
-    for(let i=1;i<gps.length;i++){
-     if(gps[i].t>endTime)break;
-     if(Math.hypot(gps[i].x-gps[i-1].x,gps[i].y-gps[i-1].y)>=1)
-      moving=i;
-    }
-    const stationaryStart=gps[moving]?.t;
-    if(!Number.isFinite(stationaryStart))continue;
+    // Find the beginning of the final sustained stop by working backwards
+    // from the final GPS position. A 5 m radius tolerates quantisation/jitter;
+    // a one-metre coordinate change must not reset the stationary clock.
+    const endGPS=gps.findLastIndex(p=>p.t<=endTime);
+    if(endGPS<1)continue;
+    const finalPosition=gps[endGPS];
+    let stopIndex=endGPS;
+    while(stopIndex>0&&
+      Math.hypot(gps[stopIndex-1].x-finalPosition.x,
+                 gps[stopIndex-1].y-finalPosition.y)<=5)
+     stopIndex--;
+    const stationaryStart=gps[stopIndex].t;
     const stationaryFor=endTime-stationaryStart;
     if(Number.isFinite(retirement)){
-     // If GPS continues moving into the retirement announcement, use the
-     // last observation at or before the official OUT transition.
+     // Place the marker at the *start* of the sustained stop, not at the
+     // official OUT announcement minutes later.
      const markerIndex=bounded.findLastIndex(p=>p[2]<=stationaryStart);
      if(markerIndex>=0){
       const lastMoving=bounded[markerIndex];
@@ -289,8 +291,6 @@ class RaceTraceGPS extends HTMLElement {
       stopped++;
      }
     }else if(stationaryFor>=5){
-     // Show at most 5 seconds of stationary GPS observations, as a
-     // vertical trace, then freeze. On a later restart the line resumes.
      const cutoff=stationaryStart+5;
      traces.set(id,bounded.filter(p=>p[2]<=cutoff));
      stopped++;
@@ -486,14 +486,14 @@ class RaceTraceGPS extends HTMLElement {
     const offscale=py<15||py>h-32;
     const visibleX=Math.max(63,Math.min(w-29,px));
     const visibleY=Math.max(27,Math.min(h-45,py));
-    const size=11;
+    const size=6;
     ctx.lineCap='round';ctx.setLineDash([]);
     ctx.beginPath();ctx.moveTo(visibleX-size,visibleY-size);ctx.lineTo(visibleX+size,visibleY+size);
     ctx.moveTo(visibleX-size,visibleY+size);ctx.lineTo(visibleX+size,visibleY-size);
-    ctx.strokeStyle='#ffffff';ctx.lineWidth=8;ctx.stroke();
-    ctx.strokeStyle='#ef4444';ctx.lineWidth=4;ctx.stroke();
-    ctx.font='bold 13px system-ui';ctx.fillStyle='#fff';
-    ctx.fillText('#'+id+(offscale?' (off scale)':''),Math.min(w-135,visibleX+15),Math.max(20,visibleY-9));
+    ctx.strokeStyle='#ffffff';ctx.lineWidth=3.5;ctx.stroke();
+    ctx.strokeStyle='#ef4444';ctx.lineWidth=2;ctx.stroke();
+    ctx.font='11px system-ui';ctx.fillStyle='#fff';
+    ctx.fillText('#'+id+(offscale?' (off scale)':''),Math.min(w-135,visibleX+9),Math.max(20,visibleY-7));
     ctx.lineCap='butt';
    }
    const retirementDebug=[...markers].map(([id,p])=>{
