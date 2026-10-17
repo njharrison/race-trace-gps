@@ -273,6 +273,14 @@ class RaceTraceGPS extends HTMLElement {
   };
   if(!this.gps||!this.timing){status.textContent=this.error||'Waiting for GPS and timing recordings';return;}
   try{
+   function crossingAt(track,d){
+    for(let i=1;i<track.length;i++){
+     const a=track[i-1],b=track[i],dx=b[1]-a[1];
+     if(dx>1e-7&&a[1]<=d&&b[1]>=d)
+      return a[2]+(d-a[1])/dx*(b[2]-a[2]);
+    }
+    return null;
+   }
    // Heavy GPS projection, alignment and clean-lap learning are cached.
    // Viewport, reference-time adjustment and smoothing must not invalidate it.
    const key=[this.gps.samples.length,this.gps.samples.at(-1)?.recorded_at,
@@ -446,15 +454,6 @@ class RaceTraceGPS extends HTMLElement {
    }
    const {traces,events,aligned,referenceId,ref,markers,stopped,
     selected,typical,learned,cleanLaps}=this.processed;
-   function crossingAt(track,d){
-    for(let i=1;i<track.length;i++){
-     const a=track[i-1],b=track[i],dx=b[1]-a[1];
-     if(dx>1e-7&&a[1]<=d&&b[1]>=d)
-      return a[2]+(d-a[1])/dx*(b[2]-a[2]);
-    }
-    return null;
-   }
-   const useLearned=this.referenceMode==='learned'&&learned!==null;
    const firstCross=events.filter(e=>String(e[0])===referenceId&&e[1]===2)[0];
    const originTime=firstCross?.[2]??crossingAt(ref,1);
    // Normalised lap-time shape is shared by all drivers. Anchor it to
