@@ -162,7 +162,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceOffi
 class RaceTraceGPS extends HTMLElement {
  constructor(){
   super();this.attachShadow({mode:'open'});this.gps=null;this.timing=null;
-  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.pitEnabled=true;this.smoothingSeconds=0;this.viewport=null;this.referenceLapOffset=0;this.drag=null;
+  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.pitEnabled=true;this.smoothingSeconds=0;this.viewport=null;this.referenceLapAdjustment=0;this.drag=null;
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
@@ -204,10 +204,10 @@ class RaceTraceGPS extends HTMLElement {
   canvas.style.height=this.config.height+'px';
   canvas.style.touchAction='none';
   this.shadowRoot.querySelector('#resetview').onclick=()=>{
-   this.viewport=null;this.referenceLapOffset=0;this.draw();
+   this.viewport=null;this.referenceLapAdjustment=0;this.draw();
   };
   this.shadowRoot.querySelector('#refshift').textContent=
-   this.referenceLapOffset?'Reference lap '+(this.referenceLapOffset>0?'+':'')+this.referenceLapOffset:'';
+   this.referenceLapAdjustment?'Reference lap adjustment '+(this.referenceLapAdjustment>0?'+':'')+this.referenceLapAdjustment.toFixed(1)+'s/lap':'';
   // Drag preview stays INSIDE the canvas: never transform the DOM element.
   canvas.onpointerdown=e=>{
    const rect=canvas.getBoundingClientRect();
@@ -218,7 +218,7 @@ class RaceTraceGPS extends HTMLElement {
    this.drag={pointer:e.pointerId,x:e.clientX,y:e.clientY,
     zone:px<.25?'y':px>.75?'reference':'both',
     start:this.viewport?{...this.viewport}:null,
-    reference:this.referenceLapOffset,dx:0,dy:0,snapshot};
+    reference:this.referenceLapAdjustment,dx:0,dy:0,snapshot};
    canvas.setPointerCapture(e.pointerId);
   };
   canvas.onpointermove=e=>{
@@ -234,9 +234,9 @@ class RaceTraceGPS extends HTMLElement {
    ctx.drawImage(drag.snapshot,offsetX,offsetY);
    ctx.restore();
    if(drag.zone==='reference'){
-    const steps=Math.round(drag.dy/180);
+    const adjustment=drag.reference-Math.round(drag.dy/10)/10;
     this.shadowRoot.querySelector('#refshift').textContent=
-     'Reference lap '+((drag.reference+steps)>0?'+':'')+(drag.reference+steps);
+     'Reference '+(adjustment>0?'+':'')+adjustment.toFixed(1)+'s/lap';
    }
   };
   const endDrag=e=>{
@@ -246,7 +246,7 @@ class RaceTraceGPS extends HTMLElement {
    const rect=canvas.getBoundingClientRect();
    const dx=drag.dx/rect.width,dy=drag.dy/rect.height;
    if(drag.zone==='reference'){
-    this.referenceLapOffset=drag.reference+Math.round(drag.dy/180);
+    this.referenceLapAdjustment=drag.reference-Math.round(drag.dy/10)/10;
    }else{
     const v=drag.start||this.viewport,xr=v.xMax-v.xMin,yr=v.yMax-v.yMin;
     this.viewport={...v,xMin:v.xMin-(drag.zone==='both'?dx*xr:0),
@@ -437,17 +437,18 @@ class RaceTraceGPS extends HTMLElement {
    const originTime=firstCross?.[2]??crossingAt(ref,1);
    // Normalised lap-time shape is shared by all drivers. Anchor it to
    // the reference car at its first racing lap crossing.
+   const referenceAdjustment=this.referenceLapAdjustment;
    function timeAtDistance(d){
     if(useLearned&&Number.isFinite(originTime)){
      const phase=((d-1)%1+1)%1,lap=Math.floor(d-1);
      const q=phase*100,j=Math.min(99,Math.floor(q)),f=q-j;
-     return originTime+(lap+learned[j]*(1-f)+learned[j+1]*f)*typical;
+     return originTime+(lap+learned[j]*(1-f)+learned[j+1]*f)*(typical+referenceAdjustment);
     }
     if(d<ref[0][1]||d>ref.at(-1)[1])return null;
     let lo=0,hi=ref.length-1;
     while(hi-lo>1){const mid=(lo+hi)>>1;if(ref[mid][1]<d)lo=mid;else hi=mid;}
     const u=ref[hi][1]-ref[lo][1];
-    return u>0?ref[lo][2]+(d-ref[lo][1])/u*(ref[hi][2]-ref[lo][2]):null;
+    return u>0?ref[lo][2]+(d-ref[lo][1])/u*(ref[hi][2]-ref[lo][2])+(d-1)*referenceAdjustment:null;
    }
    const series=new Map();
    for(const [id,track] of traces){
@@ -578,8 +579,7 @@ class RaceTraceGPS extends HTMLElement {
    if(!this.viewport)this.viewport={xMin:minX,xMax:maxX,yMin:minGap,yMax:maxGap};
    const view=this.viewport;
    const x=v=>52+(v-view.xMin)/Math.max(.001,view.xMax-view.xMin)*(w-76);
-   const y=v=>20+(v+this.referenceLapOffset*(Number.isFinite(typical)?typical:100)-view.yMin)/
-    Math.max(.001,view.yMax-view.yMin)*(h-60);
+   const y=v=>20+(v-view.yMin)/Math.max(.001,view.yMax-view.yMin)*(h-60);
    ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.font='12px system-ui';
    for(let lap=Math.ceil(view.xMin);lap<=view.xMax;lap++){
     ctx.beginPath();ctx.moveTo(x(lap),15);ctx.lineTo(x(lap),h-32);ctx.stroke();
