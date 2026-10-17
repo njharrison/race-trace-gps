@@ -183,6 +183,11 @@ class RaceTraceGPS extends HTMLElement {
    if(gps.schema_version!==1||timing.schema_version!==1)throw Error('Expected recording schema_version 1');
    if(!Array.isArray(gps.geometry?.points)||!Array.isArray(gps.samples)||!Array.isArray(timing.samples))
     throw Error('Missing GPS geometry or samples');
+   if(this.gps&&(this.gps.geometry?.circuit_key!==gps.geometry?.circuit_key||
+     this.gps.samples?.[0]?.recorded_at!==gps.samples?.[0]?.recorded_at)){
+    this.processed=null;this.processedKey=null;this.lastRender=null;
+    this.viewport=null;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;
+   }
    this.gps=gps;this.timing=timing;this.error='';this.draw();
   }catch(e){this.error=String(e);this.draw();}
   finally{this.busy=false;}
@@ -297,8 +302,20 @@ class RaceTraceGPS extends HTMLElement {
    const geometry=RaceTraceCircuit.prepare(points);
    const frames=RaceTraceRecordingSync.gpsFrames(this.gps);
    const events=RaceTraceRecordingSync.crossings(this.timing).filter(e=>e[1]>=2);
-   const calibration=RaceTraceCalibration.calibrate(geometry,frames,events);
-   if(!calibration.confidence)throw Error('Start/finish calibration confidence insufficient');
+   let calibration=null,provisional=true;
+   if(events.length){
+    try{const official=RaceTraceCalibration.calibrate(geometry,frames,events);
+     if(official.confidence){calibration=official;provisional=false;}
+    }catch(_e){/* Await official crossing data. */}
+   }
+   if(!calibration){
+    const first=frames.find(f=>f.d.length);
+    if(!first)throw Error('Waiting for GPS positions');
+    const leaderSample=this.timing.samples.find(s=>s.drivers?.some(d=>String(d.position)==='1'));
+    const leader=leaderSample?.drivers?.find(d=>String(d.position)==='1');
+    const position=first.d.find(d=>d[0]===String(leader?.id))||first.d[0];
+    calibration={distance:RaceTraceCircuit.project(geometry,position[1],position[2]).distance,confidence:false};
+   }
    const traces=new Map(),previous=new Map();
    // Direction from robust signed centreline displacement across nearby samples.
    const changes=[];
@@ -602,13 +619,13 @@ class RaceTraceGPS extends HTMLElement {
     profiledTraces.set(id,shaped);
    }
     return {traces,driverProfiles,correctedTraces,profiledTraces,profiledDrivers,profiledPoints,profileCounts,correctedAnchors,correctedDrivers,projectionStats,events,aligned,referenceId,ref,markers,stopped,
-      selected,typical,learned,cleanLaps};
+      selected,typical,learned,cleanLaps,provisional};
     })();
    }
    // Older cached preprocessing results may predate the driver profile field.
    if(!this.processed.driverProfiles){this.processed=null;this.processedKey=null;return this.draw();}
    const {traces,driverProfiles,correctedTraces,profiledTraces,profiledDrivers,profiledPoints,profileCounts,correctedAnchors,correctedDrivers,projectionStats,events,aligned,referenceId,ref,markers,stopped,
-    selected,typical,learned,cleanLaps}=this.processed;
+    selected,typical,learned,cleanLaps,provisional}=this.processed;
    // Independent validation: compare interpolated GPS crossing times with
    // official lap-transition timestamps at the same finish-line distance.
    // This does not modify the graph or the reference-lap adjustment.
@@ -1035,7 +1052,7 @@ class RaceTraceGPS extends HTMLElement {
    }
    status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
     aligned.aligned.length+' aligned · reference car #'+referenceId+
-    ' · '+(useLearned?'learned '+selected.length+' clean laps ('+typical.toFixed(1)+'s)':'leader GPS fallback')+
+    ' · '+(provisional?'PROVISIONAL S/F (leader at start) · 1:1 leader GPS reference':useLearned?'learned '+selected.length+' clean laps ('+typical.toFixed(1)+'s)':'leader GPS fallback')+
     ' · profiles '+(this.useDriverProfiles?'ON':'OFF')+' ('+profiledDrivers+' drivers / '+profiledPoints+' samples) · '+markers.size+' retired · '+stopped+' stopped · timing corrections '+(this.applyTimingCorrections?'ON':'OFF')+' ('+correctedAnchors+' anchors / '+correctedDrivers+' cars) · gap at equal distance'+validationSummary;
   }catch(e){status.textContent='Experimental diagnostics: '+e.message;}
  }
