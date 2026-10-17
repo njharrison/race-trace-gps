@@ -1019,12 +1019,27 @@ class RaceTraceGPS extends HTMLElement {
    }
    const legend=this.shadowRoot.querySelector('#legend');legend.replaceChildren();
    this.hoverSeries={series,meta:driverMeta};
+   // Stable 2026 team colours, keyed by race number. Prefer live team_color
+   // when available, but never use an arbitrary palette for known drivers.
+   const teamColours={
+    '1':'#FF8000','81':'#FF8000', // McLaren: Norris, Piastri
+    '63':'#27F4D2','12':'#27F4D2', // Mercedes: Russell, Antonelli
+    '16':'#E80020','44':'#E80020', // Ferrari: Leclerc, Hamilton
+    '3':'#3671C6','6':'#3671C6', // Red Bull: Verstappen, Hadjar
+    '10':'#FF87BC','43':'#FF87BC', // Alpine: Gasly, Colapinto
+    '55':'#64C4FF','23':'#64C4FF', // Williams: Sainz, Albon
+    '30':'#6692FF','41':'#6692FF', // Racing Bulls: Lawson, Lindblad
+    '31':'#B6BABD','87':'#B6BABD', // Haas: Ocon, Bearman
+    '27':'#00E701','5':'#00E701', // Audi: Hulkenberg, Bortoleto
+    '14':'#229971','18':'#229971', // Aston Martin: Alonso, Stroll
+    '11':'#909090','77':'#909090' // Cadillac: Perez, Bottas
+   };
    const colours=new Map();let colourIndex=0;
    for(const [id,points] of series){
     const meta=driverMeta.get(id)||{};
     const label=String(meta.tla||meta.abbreviation||meta.name||meta.driver_name||('#'+id));
     const explicit=String(meta.team_color||'');
-    const color=/^#[0-9a-f]{6}$/i.test(explicit)?explicit:colors[colourIndex%colors.length];
+    const color=/^#[0-9a-f]{6}$/i.test(explicit)?explicit:(teamColours[id]||colors[colourIndex%colors.length]);
     colourIndex++;colours.set(id,color);
     const button=document.createElement('button');
     button.textContent=label+' #'+id;
