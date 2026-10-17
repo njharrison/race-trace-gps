@@ -233,15 +233,66 @@ class RaceTraceGPS extends HTMLElement {
     last.set(id,{phase,value:unwrapped});
    }
    const aligned=RaceTraceOfficialAlignment.align(traces,events);
-   // A final stationary spell of 5s or longer ends a driver's trace at
-   // the last moving sample. Earlier stops are retained if the car resumes.
+   // A stationary car remains visible for up to five seconds. If it is
+   // officially retired, replace the stationary tail with an X at the last
+   // moving point. Use actual GPS movement (metres), not centreline phase:
+   // pit-lane projection can move while the car itself is stationary.
+   const retirementAt=new Map();
+   const retiredStatus=value=>/^(RETIRED|RET|DNF|OUT)$/i.test(String(value??'').trim());
+   for(const sample of this.timing.samples){
+    for(const d of sample.drivers||[]){
+     const id=String(d.id??d.racing_number??'');
+     if(!id||retirementAt.has(id))continue;
+     if(d.retired===true||[d.status,d.driver_status,d.race_status].some(retiredStatus))
+      retirementAt.set(id,Number(sample.timestamp));
+    }
+   }
+   const markers=new Map();
    let stopped=0;
+   const gpsByDriver=new Map();
+   for(const frame of frames)for(const [id,x,y] of frame.d){
+    if(!gpsByDriver.has(id))gpsByDriver.set(id,[]);
+    gpsByDriver.get(id).push({t:frame.t,x,y});
+   }
    for(const [id,track] of traces){
-    if(track.length<3)continue;
-    let k=track.length-1;
-    while(k>0&&Math.abs(track[k][1]-track[k-1][1])<0.00025)k--;
-    if(k<track.length-1&&track.at(-1)[2]-track[k][2]>=5){
-     traces.set(id,track.slice(0,k+1));stopped++;
+    if(track.length<2)continue;
+    const gps=gpsByDriver.get(id)||[];
+    const retirement=retirementAt.get(id);
+    // Ignore post-retirement GPS updates even if the car is transported.
+    if(Number.isFinite(retirement)){
+     let lastIndex=track.findIndex(p=>p[2]>retirement);
+     if(lastIndex<0)lastIndex=track.length;
+     traces.set(id,track.slice(0,lastIndex));
+    }
+    const bounded=traces.get(id);
+    if(!bounded.length)continue;
+    const endTime=bounded.at(-1)[2];
+    let moving=0;
+    // Latest GPS sample that changed physical position by at least 1 metre.
+    // The last moving point is the sample immediately before the stop.
+    for(let i=1;i<gps.length;i++){
+     if(gps[i].t>endTime)break;
+     if(Math.hypot(gps[i].x-gps[i-1].x,gps[i].y-gps[i-1].y)>=1)
+      moving=i;
+    }
+    const stationaryStart=gps[moving]?.t;
+    if(!Number.isFinite(stationaryStart))continue;
+    const stationaryFor=endTime-stationaryStart;
+    if(Number.isFinite(retirement)){
+     // Do not manufacture a retirement location when GPS is still moving.
+     const markerIndex=bounded.findLastIndex(p=>p[2]<=stationaryStart);
+     if(markerIndex>=0){
+      const lastMoving=bounded[markerIndex];
+      traces.set(id,bounded.slice(0,markerIndex+1));
+      markers.set(id,lastMoving);
+      stopped++;
+     }
+    }else if(stationaryFor>=5){
+     // Show at most 5 seconds of stationary GPS observations, as a
+     // vertical trace, then freeze. On a later restart the line resumes.
+     const cutoff=stationaryStart+5;
+     traces.set(id,bounded.filter(p=>p[2]<=cutoff));
+     stopped++;
     }
    }
    // Learn a race-wide pace curve from clean, complete laps across drivers.
@@ -418,6 +469,16 @@ class RaceTraceGPS extends HTMLElement {
     ctx.lineWidth=id===referenceId&&!useLearned?2.5:1.5;ctx.beginPath();
     points.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1])):ctx.moveTo(x(p[0]),y(p[1])));
     ctx.stroke();
+    if(markers.has(id)){
+     const point=markers.get(id);
+     const t=timeAtDistance(point[1]);
+     if(t!==null&&point[1]>=minX&&point[1]<=maxX){
+      const px=x(point[1]),py=y(point[2]-t),size=8;
+      ctx.strokeStyle=color;ctx.lineWidth=3.5;ctx.setLineDash([]);
+      ctx.beginPath();ctx.moveTo(px-size,py-size);ctx.lineTo(px+size,py+size);
+      ctx.moveTo(px-size,py+size);ctx.lineTo(px+size,py-size);ctx.stroke();
+     }
+    }
    }
    ctx.restore();
    status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
