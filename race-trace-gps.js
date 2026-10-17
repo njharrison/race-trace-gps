@@ -223,7 +223,7 @@ class RaceTraceGPS extends HTMLElement {
    const dx=(e.clientX-drag.x)/rect.width;
    const dy=(e.clientY-drag.y)/rect.height;
    if(drag.zone==='reference'){
-    this.referenceLapOffset=drag.reference+Math.round(-dx*12);
+    this.referenceLapOffset=drag.reference+Math.round(dy*12);
    }else{
     const start=drag.start||this.viewport;
     const xr=start.xMax-start.xMin,yr=start.yMax-start.yMin;
