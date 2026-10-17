@@ -918,23 +918,25 @@ class RaceTraceGPS extends HTMLElement {
     for(const message of messages){
      const messageText=typeof message==='string'?message:
       String(message?.message??message?.text??message?.description??'');
-     if(!/SAFETY CAR (?:IN THIS LAP|ENDING)|SC ENDING/i.test(messageText))continue;
+     const isVscEnding=/\bVSC\s+ENDING\b|\bVIRTUAL SAFETY CAR\s+ENDING\b/i.test(messageText);
+     const isScEnding=/SAFETY CAR (?:IN THIS LAP|ENDING)|\bSC ENDING\b/i.test(messageText)&&!isVscEnding;
+     if(!isVscEnding&&!isScEnding)continue;
      const rawTime=typeof message==='object'?
       (message.timestamp??message.time??sample.timestamp):sample.timestamp;
      const t=typeof rawTime==='number'?rawTime:Number(rawTime);
-     if(Number.isFinite(t)&&!endingAnnouncements.some(e=>Math.abs(e.t-t)<15))
-      endingAnnouncements.push({t,text:'SC IN THIS LAP'});
+     if(Number.isFinite(t)&&!endingAnnouncements.some(e=>e.text===(isVscEnding?'VSC ENDING':'SC IN THIS LAP')&&Math.abs(e.t-t)<15))
+      endingAnnouncements.push({t,text:isVscEnding?'VSC ENDING':'SC IN THIS LAP',vsc:isVscEnding});
     }
    }
    for(const announcement of endingAnnouncements){
     const distance=refDistanceAtTime(announcement.t);
     if(distance===null)continue;
-    ctx.save();ctx.strokeStyle='#f97316';ctx.lineWidth=2;
+    ctx.save();ctx.strokeStyle=announcement.vsc?'#eab308':'#f97316';ctx.lineWidth=2;
     ctx.setLineDash([3,5]);ctx.beginPath();
     ctx.moveTo(x(distance+minGap/lapSeconds),y(minGap));
     ctx.lineTo(x(distance+maxGap/lapSeconds),y(maxGap));ctx.stroke();
     ctx.setLineDash([]);ctx.font='bold 12px system-ui';
-    ctx.fillStyle='#fdba74';ctx.fillText(announcement.text,x(distance)+5,47);
+    ctx.fillStyle=announcement.vsc?'#fde047':'#fdba74';ctx.fillText(announcement.text,x(distance)+5,47);
     ctx.restore();
    }
    const colors=['#fb7185','#38bdf8','#a3e635','#fbbf24','#c084fc','#2dd4bf','#f472b6','#93c5fd'];
