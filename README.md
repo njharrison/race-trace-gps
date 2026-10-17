@@ -36,3 +36,9 @@ The card ends a driver's final trace at the beginning of a stationary GPS spell 
 The default **Learned clean-lap pace** reference calculates a median normalised 101-point lap-time profile from qualifying complete laps across all cars. It needs at least five accepted clean laps, otherwise it falls back to the furthest-progressed car's GPS trace. Switch the reference in the card dropdown to compare both methods. This is an initial implementation and has not yet been verified against the offline Singapore golden master.
 
 Driver buttons below the graph toggle visibility; **Show all drivers** resets the selection. Labels are taken from the latest timing sample when available, falling back to the racing number. The chart only draws laps from lap 1 onwards, while pre-race GPS remains available for calibration.
+
+## Retirement and stationary GPS behaviour
+
+The card detects official retirement from `retired: true` or driver `status`, `driver_status`, or `race_status` equal to `RETIRED`, `RET`, `DNF`, or `OUT` in timing samples. An officially retired driver's trace ends at the last moving GPS position and displays a large X; no stationary tail is shown.
+
+Without an official retirement, a stationary car's trace may continue vertically for up to five seconds before it freezes. Motion detection uses GPS coordinate displacement of at least one metre between observations. This implementation is provisional and should be checked against Bortoleto's Singapore recording, particularly the exact field carrying retirement status and whether the GPS recorder continues to sample a stopped car. It does not infer a five-second interval when recording samples have ceased entirely.
