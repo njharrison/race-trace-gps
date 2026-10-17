@@ -664,22 +664,84 @@ class RaceTraceGPS extends HTMLElement {
     const u=ref[hi][1]-ref[lo][1];
     return u>0?ref[lo][2]+(d-ref[lo][1])/u*(ref[hi][2]-ref[lo][2])+(d-1)*referenceAdjustment:null;
    }
-   // Sample every driver's crossing time at common race distances.
-   const series=new Map(),gridStep=0.005;
-   for(const [id,track] of (this.useDriverProfiles?profiledTraces:(this.applyTimingCorrections?correctedTraces:traces))){
+   // Original offline prototype: evaluate the driver's own normalised
+   // reference at its GPS distance, then subtract the actual GPS timestamp.
+   // Keep GPS samples as X coordinates; do not rebuild timestamps from laps.
+   const profileEval=(profile,f)=>{
+    const n=profile.length-1;
+    const u=Math.max(0,Math.min(1,f))*n,i=Math.min(n-1,Math.floor(u));
+    const t=u-i,h=1/n,delta=j=>n*(profile[j+1]-profile[j]);
+    const tangent=j=>{
+     if(j===0)return Math.max(0,(3*delta(0)-delta(1))/2);
+     if(j===n)return Math.max(0,(3*delta(n-1)-delta(n-2))/2);
+     const p=delta(j-1),q=delta(j);
+     return p*q<=0?0:2*p*q/(p+q);
+    };
+    const m0=tangent(i),m1=tangent(i+1);
+    return (2*t*t*t-3*t*t+1)*profile[i]+
+     (t*t*t-2*t*t+t)*h*m0+
+     (-2*t*t*t+3*t*t)*profile[i+1]+
+     (t*t*t-t*t)*h*m1;
+   };
+   const smoothProfile=values=>{
+    const n=values.length-1;
+    const result=values.map((v,i)=>{
+     if(i===0)return 0;
+     if(i===n)return 1;
+     let sum=0,weight=0;
+     for(let k=-5;k<=5;k++){
+      const j=Math.max(0,Math.min(n,i+k));
+      const w=Math.exp(-.5*(k/2.1)**2);
+      sum+=w*values[j];weight+=w;
+     }
+     return sum/weight;
+    });
+    for(let i=1;i<n;i++)result[i]=Math.max(result[i],result[i-1]+1e-7);
+    return result[n-1]<1?result:null;
+   };
+   const sharedProfile=learned?smoothProfile(learned):null;
+   const profiles=new Map();
+   for(const [id,p] of driverProfiles){
+    const smoothed=smoothProfile(p);
+    if(smoothed)profiles.set(id,smoothed);
+   }
+   const series=new Map(),sigma=this.smoothingSeconds/2;
+   const origin=Number.isFinite(originTime)?originTime:ref[0][2];
+   const referenceSeconds=(Number.isFinite(typical)?typical:100)+referenceAdjustment;
+   for(const [id,track] of traces){
     if(track.length<2)continue;
+    const profile=this.useDriverProfiles?(profiles.get(id)||sharedProfile):sharedProfile;
+    const source=this.applyTimingCorrections?correctedTraces.get(id)||track:track;
+    const segments=[];let segment=[],prev=null;
+    for(const p of source){
+     if(p[1]<1)continue;
+     if(prev&&(p[2]-prev[2]>8||p[2]<=prev[2]||Math.abs(p[1]-prev[1])>.16)){
+      if(segment.length)segments.push(segment);
+      segment=[];
+     }
+     const d=p[1],lap=Math.floor(d),fraction=d-lap;
+     const progress=profile?profileEval(profile,fraction):fraction;
+     const referenceTime=origin+(lap+progress-1)*referenceSeconds;
+     segment.push({d,t:p[2],raw:p[2]-referenceTime});
+     prev=p;
+    }
+    if(segment.length)segments.push(segment);
     const pts=[];
-    let cursor=1;
-    const start=Math.max(1,Math.ceil(track[0][1]/gridStep)*gridStep);
-    for(let d=start;d<=track.at(-1)[1];d+=gridStep){
-     while(cursor<track.length&&track[cursor][1]<d)cursor++;
-     if(cursor>=track.length)break;
-     const p=track[cursor-1],q=track[cursor],span=q[1]-p[1];
-     if(span<=0||span>.12)continue;
-     const fraction=(d-p[1])/span;
-     if(fraction<0||fraction>1)continue;
-     const t=timeAtDistance(d);
-     if(Number.isFinite(t))pts.push([d,p[2]+fraction*(q[2]-p[2])-t]);
+    for(const seg of segments){
+     for(let i=0;i<seg.length;i++){
+      const p=seg[i];
+      if(!sigma){pts.push([p.d,p.raw]);continue;}
+      let sum=0,weight=0;
+      for(let k=i;k>=0&&p.t-seg[k].t<=3*sigma;k--){
+       const w=Math.exp(-.5*((p.t-seg[k].t)/sigma)**2);
+       sum+=seg[k].raw*w;weight+=w;
+      }
+      for(let k=i+1;k<seg.length&&seg[k].t-p.t<=3*sigma;k++){
+       const w=Math.exp(-.5*((seg[k].t-p.t)/sigma)**2);
+       sum+=seg[k].raw*w;weight+=w;
+      }
+      pts.push([p.d,sum/weight]);
+     }
     }
     if(pts.length>1)series.set(id,pts);
    }
@@ -772,26 +834,6 @@ class RaceTraceGPS extends HTMLElement {
     'Pit-loss log (provisional lap-excess method): '+
     (pitStops.length?pitStops.map(p=>'#'+p.id+' L'+p.lap+' '+p.loss.toFixed(1)+'s'+(p.neutral?' [SC/VSC]':'')).join(' · '):'No verified candidates')+
     ' · '+validStops.length+' eligible · P25 '+(Number.isFinite(expected)?expected.toFixed(1)+'s':'n/a');
-   // Smooth gaps on the uniform distance grid, using a time-equivalent
-   // window. Do not alter the source GPS or the lap-reference adjustment.
-   if(this.smoothingSeconds>0){
-    const radius=Math.max(1,Math.round(this.smoothingSeconds/
-     Math.max(1,Number.isFinite(typical)?typical:100)/gridStep/2));
-    for(const [id,pts] of series){
-     const smooth=[];
-     for(let i=0;i<pts.length;i++){
-      let total=0,weights=0;
-      for(let j=Math.max(0,i-radius);j<=Math.min(pts.length-1,i+radius);j++){
-       const delta=Math.abs(pts[j][0]-pts[i][0]);
-       if(delta>radius*gridStep*1.01)continue;
-       const weight=1-Math.abs(j-i)/(radius+1);
-       total+=pts[j][1]*weight;weights+=weight;
-      }
-      smooth.push([pts[i][0],total/weights]);
-     }
-     series.set(id,smooth);
-    }
-   }
    const all=[...series.values()].flat();
    if(!all.length)throw Error('No overlapping race distances for gap calculation');
    const minX=Math.min(...all.map(p=>p[0])),maxX=Math.max(...all.map(p=>p[0]));
