@@ -773,52 +773,77 @@ class RaceTraceGPS extends HTMLElement {
     const smoothed=smoothProfile(p);
     if(smoothed)profiles.set(id,smoothed);
    }
+   // Model crossing times, not instantaneous GPS speed. For each car,
+   // use its OWN distance/time shape and lap crossing timestamps. The
+   // same car's measured speed fluctuations cannot leak into another trace.
+   // GPS remains responsible for X position, crossings and calibration.
    const series=new Map(),sigma=this.smoothingSeconds/2;
-   const origin=Number.isFinite(originTime)?originTime:ref[0][2];
-   const referenceSeconds=(Number.isFinite(typical)?typical:100)+referenceAdjustment;
+   const referenceSeconds=(Number.isFinite(typical)?typical:100)+this.referenceLapAdjustment;
+   const profileFor=id=>this.useDriverProfiles?
+    (profiles.get(id)||sharedProfile):(sharedProfile||profiles.get(id));
+   const modelTime=(track,d,profile)=>{
+    const lap=Math.floor(d),fraction=d-lap;
+    const progress=profile?profileEval(profile,fraction):fraction;
+    const first=track[0],last=track.at(-1);
+    const crossings=[];
+    for(let k=Math.max(1,Math.floor(first[1]));k<=Math.ceil(last[1]);k++){
+     const t=crossingAt(track,k);
+     if(Number.isFinite(t))crossings.push([k,t]);
+    }
+    // Estimate an individual's lap duration from their OWN completed laps.
+    const durations=[];
+    for(let j=1;j<crossings.length;j++){
+     const dt=crossings[j][1]-crossings[j-1][1];
+     if(dt>75&&dt<240)durations.push(dt);
+    }
+    const pace=durations.length?median(durations):referenceSeconds;
+    let t0=crossings.find(p=>p[0]===lap)?.[1];
+    let t1=crossings.find(p=>p[0]===lap+1)?.[1];
+    if(!Number.isFinite(t0)&&Number.isFinite(t1))t0=t1-pace;
+    if(!Number.isFinite(t1)&&Number.isFinite(t0))t1=t0+pace;
+    if(!Number.isFinite(t0)){
+     const nearest=crossings.length?crossings.reduce((a,b)=>
+      Math.abs(a[0]-lap)<Math.abs(b[0]-lap)?a:b):null;
+     if(nearest)t0=nearest[1]+(lap-nearest[0])*pace;
+     else t0=first[2]-(first[1]-lap)*pace;
+     t1=t0+pace;
+    }
+    return t0+(t1-t0)*progress;
+   };
+   // Cache the model per car per frame; the profile and lap anchors
+   // are fixed until the next GPS refresh.
+   const models=new Map();
    for(const [id,track] of traces){
     if(track.length<2)continue;
-    const profile=this.useDriverProfiles?(profiles.get(id)||sharedProfile):sharedProfile;
+    const profile=profileFor(id);
     const source=this.applyTimingCorrections?correctedTraces.get(id)||track:track;
+    const points=source.filter(p=>p[1]>=1);
+    if(points.length<2)continue;
+    // Lap crossing model is evaluated once per sample. This deliberately
+    // suppresses corner-speed ripples while preserving lap-to-lap pace.
     const segments=[];let segment=[],prev=null;
-    for(const p of source){
-     if(p[1]<1)continue;
+    for(const p of points){
      if(prev&&(p[2]-prev[2]>8||p[2]<=prev[2]||Math.abs(p[1]-prev[1])>.16)){
       if(segment.length)segments.push(segment);
       segment=[];
      }
-     const d=p[1],lap=Math.floor(d),fraction=d-lap;
-     const progress=profile?profileEval(profile,fraction):fraction;
-     // Before a clean-lap pace profile exists, use the leader's observed
-     // distance/time relationship instead of constant seconds per lap.
-     // A linear reference produces corner-by-corner speed waves in every trace.
-     // Each driver's own clean-lap shape removes its characteristic
-     // corner-speed oscillations. Until learned, use the shared clean-lap
-     // profile; only fall back to leader GPS when no profile exists at all.
-     const gpsReference=!profile?timeAtDistance(d):null;
-     const referenceTime=profile?
-      origin+(lap+progress-1)*referenceSeconds:
-      (gpsReference??(origin+(lap+fraction-1)*referenceSeconds));
-     segment.push({d,t:p[2],raw:referenceTime-p[2]});
+     segment.push({d:p[1],t:p[2],model:modelTime(source,p[1],profile)});
      prev=p;
     }
     if(segment.length)segments.push(segment);
+    models.set(id,segments);
+   }
+   // The reference is modelled from its own lap crossings and profile,
+   // rather than a raw leader GPS speed trace or a universal constant pace.
+   const refProfile=profileFor(referenceId);
+   const referenceModel=d=>modelTime(ref,d,refProfile)+
+    (d-1)*this.referenceLapAdjustment;
+   for(const [id,segments] of models){
     const pts=[];
-    for(const seg of segments){
-     for(let i=0;i<seg.length;i++){
-      const p=seg[i];
-      if(!sigma){pts.push([p.d,p.raw]);continue;}
-      let sum=0,weight=0;
-      for(let k=i;k>=0&&p.t-seg[k].t<=3*sigma;k--){
-       const w=Math.exp(-.5*((p.t-seg[k].t)/sigma)**2);
-       sum+=seg[k].raw*w;weight+=w;
-      }
-      for(let k=i+1;k<seg.length&&seg[k].t-p.t<=3*sigma;k++){
-       const w=Math.exp(-.5*((seg[k].t-p.t)/sigma)**2);
-       sum+=seg[k].raw*w;weight+=w;
-      }
-      pts.push([p.d,sum/weight]);
-     }
+    for(const seg of segments)for(const p of seg){
+     const baseline=referenceModel(p.d);
+     if(Number.isFinite(baseline)&&Number.isFinite(p.model))
+      pts.push([p.d,baseline-p.model]);
     }
     if(pts.length>1)series.set(id,pts);
    }
