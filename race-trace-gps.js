@@ -162,7 +162,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceOffi
 class RaceTraceGPS extends HTMLElement {
  constructor(){
   super();this.attachShadow({mode:'open'});this.gps=null;this.timing=null;
-  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';
+  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
@@ -190,9 +190,13 @@ class RaceTraceGPS extends HTMLElement {
  draw(){
   if(!this.shadowRoot||!this.config)return;
   if(!this.shadowRoot.querySelector('canvas')){
-   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:auto;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><canvas width="1100" height="460"></canvas></ha-card>';
+   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:auto;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer}.legend button.off{opacity:.35}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="showall">Show all drivers</button></div><canvas width="1100" height="460"></canvas><div class="legend" id="legend"></div></ha-card>';
   }
   const status=this.shadowRoot.querySelector('#status'),canvas=this.shadowRoot.querySelector('canvas');
+  const refSelect=this.shadowRoot.querySelector('#reference');
+  refSelect.value=this.referenceMode;
+  refSelect.onchange=()=>{this.referenceMode=refSelect.value;this.draw();};
+  this.shadowRoot.querySelector('#showall').onclick=()=>{this.hiddenDrivers.clear();this.draw();};
   canvas.style.height=this.config.height+'px';
   if(!this.gps||!this.timing){status.textContent=this.error||'Waiting for GPS and timing recordings';return;}
   try{
@@ -240,15 +244,58 @@ class RaceTraceGPS extends HTMLElement {
      traces.set(id,track.slice(0,k+1));stopped++;
     }
    }
-   // Reference: the car furthest along the race at the end of the recording.
-   // Compare crossing times at identical race distances, never at identical
-   // timestamps. No extrapolation beyond the reference car's observations.
+   // Learn a race-wide pace curve from clean, complete laps across drivers.
+   // Each sample's fractional lap position is associated with elapsed time
+   // from its preceding lap boundary. Median across laps at 1% bins, then
+   // enforce monotonicity. This avoids importing Singapore-specific profiles.
    const eligible=[...traces].filter(([,v])=>v.length>2);
    if(!eligible.length)throw Error('No usable driver trajectories');
    eligible.sort((a,b)=>b[1].at(-1)[1]-a[1].at(-1)[1]);
    const [referenceId,reference]=eligible[0];
    const ref=reference.filter((p,i)=>!i||p[1]>reference[i-1][1]+1e-7);
+   function crossingAt(track,d){
+    for(let i=1;i<track.length;i++){
+     const a=track[i-1],b=track[i],dx=b[1]-a[1];
+     if(dx>1e-7&&a[1]<=d&&b[1]>=d)
+      return a[2]+(d-a[1])/dx*(b[2]-a[2]);
+    }
+    return null;
+   }
+   const cleanLaps=[];
+   for(const [,track] of eligible){
+    const monotone=track.filter((p,i)=>!i||p[1]>=track[i-1][1]-0.005);
+    for(let lap=Math.max(1,Math.ceil(monotone[0][1]));lap<monotone.at(-1)[1];lap++){
+     const t0=crossingAt(monotone,lap),t1=crossingAt(monotone,lap+1);
+     if(t0===null||t1===null)continue;
+     const duration=t1-t0;
+     if(duration<75||duration>180)continue;
+     const bins=[];
+     for(let j=0;j<=100;j++){
+      const t=crossingAt(monotone,lap+j/100);
+      if(t===null)break;
+      bins.push((t-t0)/duration);
+     }
+     if(bins.length===101&&bins.every((v,j)=>!j||v>=bins[j-1]-.0001))
+      cleanLaps.push({duration,bins});
+    }
+   }
+   const median=arr=>{const s=arr.slice().sort((a,b)=>a-b);return s[Math.floor(s.length/2)];};
+   const typical=cleanLaps.length>=5?median(cleanLaps.map(l=>l.duration)):null;
+   const selected=typical===null?[]:cleanLaps.filter(l=>Math.abs(l.duration-typical)<12);
+   const learned=selected.length>=5?Array.from({length:101},(_,j)=>
+    j===0?0:j===100?1:median(selected.map(l=>l.bins[j]))):null;
+   if(learned)for(let j=1;j<101;j++)learned[j]=Math.max(learned[j],learned[j-1]+1e-7);
+   const useLearned=this.referenceMode==='learned'&&learned!==null;
+   const firstCross=events.filter(e=>String(e[0])===referenceId&&e[1]===2)[0];
+   const originTime=firstCross?.[2]??crossingAt(ref,1);
+   // Normalised lap-time shape is shared by all drivers. Anchor it to
+   // the reference car at its first racing lap crossing.
    function timeAtDistance(d){
+    if(useLearned&&Number.isFinite(originTime)){
+     const phase=((d-1)%1+1)%1,lap=Math.floor(d-1);
+     const q=phase*100,j=Math.min(99,Math.floor(q)),f=q-j;
+     return originTime+(lap+learned[j]*(1-f)+learned[j+1]*f)*typical;
+    }
     if(d<ref[0][1]||d>ref.at(-1)[1])return null;
     let lo=0,hi=ref.length-1;
     while(hi-lo>1){const mid=(lo+hi)>>1;if(ref[mid][1]<d)lo=mid;else hi=mid;}
@@ -263,6 +310,11 @@ class RaceTraceGPS extends HTMLElement {
      if(t!==null&&Number.isFinite(t))pts.push([p[1],p[2]-t]);
     }
     if(pts.length>1)series.set(id,pts);
+   }
+   // Only plot racing laps; keep pre-race observations available for calibration.
+   for(const [id,pts] of series){
+    const filtered=pts.filter(p=>p[0]>=1);
+    if(filtered.length<2)series.delete(id);else series.set(id,filtered);
    }
    const all=[...series.values()].flat();
    if(!all.length)throw Error('No overlapping race distances for gap calculation');
@@ -313,7 +365,7 @@ class RaceTraceGPS extends HTMLElement {
     if(start!==null&&end!==null&&end>start&&end-start<240)lapDurations.push(end-start);
    }
    lapDurations.sort((a,b)=>a-b);
-   const lapSeconds=lapDurations[Math.floor(lapDurations.length/2)]||100;
+   const lapSeconds=useLearned?typical:(lapDurations[Math.floor(lapDurations.length/2)]||100);
    ctx.save();ctx.beginPath();ctx.rect(52,15,w-70,h-47);ctx.clip();
    // A time interval maps to diagonal boundaries in gap/distance space.
    for(const p of periods){
@@ -335,8 +387,28 @@ class RaceTraceGPS extends HTMLElement {
    }
    const colors=['#fb7185','#38bdf8','#a3e635','#fbbf24','#c084fc','#2dd4bf','#f472b6','#93c5fd'];
    let i=0;
+   const driverMeta=new Map();
+   for(const sample of this.timing.samples)for(const d of sample.drivers||[]){
+    const id=String(d.id??'');if(id)driverMeta.set(id,d);
+   }
+   const legend=this.shadowRoot.querySelector('#legend');legend.replaceChildren();
+   const colours=new Map();let colourIndex=0;
    for(const [id,points] of series){
-    const color=id===referenceId?'#fff':colors[i%colors.length];i++;
+    const meta=driverMeta.get(id)||{};
+    const label=String(meta.tla||meta.abbreviation||meta.name||meta.driver_name||('#'+id));
+    const explicit=String(meta.team_color||'');
+    const color=/^#[0-9a-f]{6}$/i.test(explicit)?explicit:colors[colourIndex%colors.length];
+    colourIndex++;colours.set(id,color);
+    const button=document.createElement('button');
+    button.textContent=label+' #'+id;
+    button.style.borderColor=color;
+    if(this.hiddenDrivers.has(id))button.classList.add('off');
+    button.onclick=()=>{if(this.hiddenDrivers.has(id))this.hiddenDrivers.delete(id);else this.hiddenDrivers.add(id);this.draw();};
+    legend.append(button);
+   }
+   for(const [id,points] of series){
+    if(this.hiddenDrivers.has(id))continue;
+    const color=colours.get(id)||'#fff';i++;
     // A lapped car has a dashed counterpart one lap and one reference
     // lap-time away. Draw separately; never connect the two curves.
     ctx.strokeStyle=color;ctx.lineWidth=1.15;ctx.globalAlpha=.55;ctx.setLineDash([5,7]);
@@ -350,7 +422,8 @@ class RaceTraceGPS extends HTMLElement {
    ctx.restore();
    status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
     aligned.aligned.length+' aligned · reference car #'+referenceId+
-    ' (white) · '+stopped+' stationary traces terminated · gap at equal distance';
+    ' · '+(useLearned?'learned '+selected.length+' clean laps ('+typical.toFixed(1)+'s)':'leader GPS fallback')+
+    ' · '+stopped+' stationary traces terminated · gap at equal distance';
   }catch(e){status.textContent='Experimental diagnostics: '+e.message;}
  }
 }
