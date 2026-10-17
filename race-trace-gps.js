@@ -897,15 +897,45 @@ class RaceTraceGPS extends HTMLElement {
     ctx.fillStyle=p.type==='VSC'?'rgba(234,179,8,.16)':'rgba(251,146,60,.16)';
     ctx.strokeStyle=p.type==='VSC'?'#eab308':'#fb923c';
     ctx.beginPath();
-    ctx.moveTo(x(start-minGap/lapSeconds),y(minGap));
-    ctx.lineTo(x(end-minGap/lapSeconds),y(minGap));
-    ctx.lineTo(x(end-maxGap/lapSeconds),y(maxGap));
-    ctx.lineTo(x(start-maxGap/lapSeconds),y(maxGap));
+    ctx.moveTo(x(start+minGap/lapSeconds),y(minGap));
+    ctx.lineTo(x(end+minGap/lapSeconds),y(minGap));
+    ctx.lineTo(x(end+maxGap/lapSeconds),y(maxGap));
+    ctx.lineTo(x(start+maxGap/lapSeconds),y(maxGap));
     ctx.closePath();ctx.fill();
     ctx.setLineDash([5,5]);ctx.beginPath();
-    ctx.moveTo(x(start-minGap/lapSeconds),y(minGap));
-    ctx.lineTo(x(start-maxGap/lapSeconds),y(maxGap));ctx.stroke();ctx.setLineDash([]);
+    ctx.moveTo(x(start+minGap/lapSeconds),y(minGap));
+    ctx.lineTo(x(start+maxGap/lapSeconds),y(maxGap));ctx.stroke();ctx.setLineDash([]);
     ctx.font='bold 13px system-ui';ctx.fillText(p.type,x(start)+4,30);
+   }
+   // Race-control announcements are distinct from the status transition.
+   // Only mark an ending announcement if the recorder actually contains it.
+   const endingAnnouncements=[];
+   for(const sample of this.timing.samples){
+    const messages=[
+     sample.race_control_messages,sample.race_control,sample.messages,
+     sample.race_control_message,sample.message
+    ].flatMap(v=>Array.isArray(v)?v:v?[v]:[]);
+    for(const message of messages){
+     const messageText=typeof message==='string'?message:
+      String(message?.message??message?.text??message?.description??'');
+     if(!/SAFETY CAR (?:IN THIS LAP|ENDING)|SC ENDING/i.test(messageText))continue;
+     const rawTime=typeof message==='object'?
+      (message.timestamp??message.time??sample.timestamp):sample.timestamp;
+     const t=typeof rawTime==='number'?rawTime:Number(rawTime);
+     if(Number.isFinite(t)&&!endingAnnouncements.some(e=>Math.abs(e.t-t)<15))
+      endingAnnouncements.push({t,text:'SC IN THIS LAP'});
+    }
+   }
+   for(const announcement of endingAnnouncements){
+    const distance=refDistanceAtTime(announcement.t);
+    if(distance===null)continue;
+    ctx.save();ctx.strokeStyle='#f97316';ctx.lineWidth=2;
+    ctx.setLineDash([3,5]);ctx.beginPath();
+    ctx.moveTo(x(distance+minGap/lapSeconds),y(minGap));
+    ctx.lineTo(x(distance+maxGap/lapSeconds),y(maxGap));ctx.stroke();
+    ctx.setLineDash([]);ctx.font='bold 12px system-ui';
+    ctx.fillStyle='#fdba74';ctx.fillText(announcement.text,x(distance)+5,47);
+    ctx.restore();
    }
    const colors=['#fb7185','#38bdf8','#a3e635','#fbbf24','#c084fc','#2dd4bf','#f472b6','#93c5fd'];
    let i=0;
