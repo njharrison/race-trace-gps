@@ -257,7 +257,7 @@ class RaceTraceGPS extends HTMLElement {
     const v=drag.start||this.viewport,xr=v.xMax-v.xMin,yr=v.yMax-v.yMin;
     this.viewport={...v,xMin:v.xMin-(drag.zone==='both'?dx*xr:0),
      xMax:v.xMax-(drag.zone==='both'?dx*xr:0),
-     yMin:v.yMin-dy*yr,yMax:v.yMax-dy*yr};
+     yMin:v.yMin+dy*yr,yMax:v.yMax+dy*yr};
    }
    this.draw();
   };
@@ -270,11 +270,11 @@ class RaceTraceGPS extends HTMLElement {
    const fy=Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height));
    const factor=e.deltaY>0?1.2:1/1.2;
    const v=this.viewport;
-   const cx=v.xMin+fx*(v.xMax-v.xMin),cy=v.yMin+fy*(v.yMax-v.yMin);
+   const cx=v.xMin+fx*(v.xMax-v.xMin),cy=v.yMax-fy*(v.yMax-v.yMin);
    const xr=Math.max(.15,Math.min(100,(v.xMax-v.xMin)*factor));
    const yr=Math.max(1,Math.min(2000,(v.yMax-v.yMin)*factor));
    this.viewport={xMin:cx-fx*xr,xMax:cx+(1-fx)*xr,
-    yMin:cy-fy*yr,yMax:cy+(1-fy)*yr};
+    yMin:cy-(1-fy)*yr,yMax:cy+fy*yr};
    this.draw();
   };
   if(!this.gps||!this.timing){status.textContent=this.error||'Waiting for GPS and timing recordings';return;}
