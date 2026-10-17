@@ -580,7 +580,26 @@ class RaceTraceGPS extends HTMLElement {
     'Pit-loss log (provisional lap-excess method): '+
     (pitStops.length?pitStops.map(p=>'#'+p.id+' L'+p.lap+' '+p.loss.toFixed(1)+'s'+(p.neutral?' [SC/VSC]':'')).join(' · '):'No verified candidates')+
     ' · '+validStops.length+' eligible · P25 '+(Number.isFinite(expected)?expected.toFixed(1)+'s':'n/a');
-   // Smoothing will be reworked for the fixed-distance grid.
+   // Smooth gaps on the uniform distance grid, using a time-equivalent
+   // window. Do not alter the source GPS or the lap-reference adjustment.
+   if(this.smoothingSeconds>0){
+    const radius=Math.max(1,Math.round(this.smoothingSeconds/
+     Math.max(1,Number.isFinite(typical)?typical:100)/gridStep/2));
+    for(const [id,pts] of series){
+     const smooth=[];
+     for(let i=0;i<pts.length;i++){
+      let total=0,weights=0;
+      for(let j=Math.max(0,i-radius);j<=Math.min(pts.length-1,i+radius);j++){
+       const delta=Math.abs(pts[j][0]-pts[i][0]);
+       if(delta>radius*gridStep*1.01)continue;
+       const weight=1-Math.abs(j-i)/(radius+1);
+       total+=pts[j][1]*weight;weights+=weight;
+      }
+      smooth.push([pts[i][0],total/weights]);
+     }
+     series.set(id,smooth);
+    }
+   }
    const all=[...series.values()].flat();
    if(!all.length)throw Error('No overlapping race distances for gap calculation');
    const minX=Math.min(...all.map(p=>p[0])),maxX=Math.max(...all.map(p=>p[0]));
