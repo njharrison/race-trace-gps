@@ -307,18 +307,62 @@ class RaceTraceGPS extends HTMLElement {
    }
    changes.sort((a,b)=>a-b);
    const direction=(changes[Math.floor(changes.length/2)]||1)<0?-1:1;
-   const last=new Map();
+   // Project each GPS sample using the local travel direction. Intersect
+   // the perpendicular through the car with the circuit centreline.
+   const observations=new Map();
    for(const frame of frames)for(const [id,x,y] of frame.d){
-    const phase=RaceTraceCircuit.phase(geometry,x,y,calibration.distance,direction);
-    const prev=last.get(id);
-    if(!traces.has(id))traces.set(id,[]);
-    let unwrapped=phase;
-    if(prev){
-     let step=phase-prev.phase;if(step>0.5)step-=1;if(step< -0.5)step+=1;
-     unwrapped=prev.value+(step>=-.03&&step<.2?step:0);
+    if(!observations.has(id))observations.set(id,[]);
+    observations.get(id).push({x,y,t:frame.t});
+   }
+   const projectionStats={intersection:0,fallback:0,rejected:0};
+   const last=new Map();
+   for(const [id,positions] of observations){
+    const track=[];
+    for(let i=0;i<positions.length;i++){
+     const p=positions[i],before=positions[Math.max(0,i-1)],
+      after=positions[Math.min(positions.length-1,i+1)];
+     const tx=after.x-before.x,ty=after.y-before.y;
+     const norm=Math.hypot(tx,ty);
+     const nearest=RaceTraceCircuit.project(geometry,p.x,p.y);
+     let distance=nearest.distance,usedIntersection=false;
+     if(norm>1){
+      const nx=-ty/norm,ny=tx/norm;
+      let best=null;
+      for(const s of geometry.segments){
+       const denominator=nx*s.dy-ny*s.dx;
+       if(Math.abs(denominator)<1e-8)continue;
+       const ax=s.a[0]-p.x,ay=s.a[1]-p.y;
+       const u=(ax*s.dy-ay*s.dx)/denominator;
+       const v=(ax*ny-ay*nx)/denominator;
+       if(v<0||v>1||Math.abs(u)>120)continue;
+       const candidate={distance:s.start+v*s.size,error:Math.abs(u)};
+       if(!best||candidate.error<best.error)best=candidate;
+      }
+      if(best){
+       const circular=Math.abs(best.distance-nearest.distance);
+       if(Math.min(circular,geometry.length-circular)<geometry.length*.08){
+        distance=best.distance;usedIntersection=true;
+       }
+      }
+     }
+     if(usedIntersection)projectionStats.intersection++;
+     else projectionStats.fallback++;
+     const phase=((distance-calibration.distance)*direction%geometry.length+
+      geometry.length)%geometry.length/geometry.length;
+     const prev=last.get(id);
+     let unwrapped=phase,accepted=true;
+     if(prev){
+      let step=phase-prev.phase;
+      if(step>.5)step-=1;
+      if(step<-.5)step+=1;
+      if(step<-.03||step>=.2){
+       unwrapped=prev.value;accepted=false;projectionStats.rejected++;
+      }else unwrapped=prev.value+step;
+     }
+     track.push([0,unwrapped,p.t]);
+     last.set(id,{phase:accepted?phase:prev.phase,value:unwrapped});
     }
-    traces.get(id).push([0,unwrapped,frame.t]);
-    last.set(id,{phase,value:unwrapped});
+    traces.set(id,track);
    }
    const aligned=RaceTraceOfficialAlignment.align(traces,events);
    // A stationary car remains visible for up to five seconds. If it is
@@ -484,11 +528,11 @@ class RaceTraceGPS extends HTMLElement {
    }
 
 
-    return {traces,correctedTraces,correctedAnchors,correctedDrivers,events,aligned,referenceId,ref,markers,stopped,
+    return {traces,correctedTraces,correctedAnchors,correctedDrivers,projectionStats,events,aligned,referenceId,ref,markers,stopped,
       selected,typical,learned,cleanLaps};
     })();
    }
-   const {traces,correctedTraces,correctedAnchors,correctedDrivers,events,aligned,referenceId,ref,markers,stopped,
+   const {traces,correctedTraces,correctedAnchors,correctedDrivers,projectionStats,events,aligned,referenceId,ref,markers,stopped,
     selected,typical,learned,cleanLaps}=this.processed;
    // Independent validation: compare interpolated GPS crossing times with
    // official lap-transition timestamps at the same finish-line distance.
