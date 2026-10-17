@@ -876,7 +876,12 @@ class RaceTraceGPS extends HTMLElement {
    pitDriverSelect.replaceChildren();
    for(const id of series.keys()){
     const opt=document.createElement('option');
-    opt.value=id;opt.textContent='#'+id;pitDriverSelect.append(opt);
+    opt.value=id;
+    const live=this._hass?.states?.[this.config.driver_entity]?.attributes?.drivers;
+    const liveDriver=Array.isArray(live)?live.find(d=>String(d.racing_number??d.id??d.driver_number)===id):null;
+    const recorded=this.timing.samples.at(-1)?.drivers?.find(d=>String(d.id)===id);
+    opt.textContent=String(liveDriver?.tla||recorded?.tla||recorded?.abbreviation||('#'+id));
+    pitDriverSelect.append(opt);
    }
    if(!series.has(this.pitDriver))this.pitDriver=series.keys().next().value;
    pitDriverSelect.value=this.pitDriver;
@@ -1081,6 +1086,29 @@ class RaceTraceGPS extends HTMLElement {
     ctx.stroke();
 
    }
+   // Label the latest visible point of each solid trace, with its TLA.
+   // Place labels after strokes so they remain legible over the lines.
+   ctx.save();ctx.font='bold 11px system-ui';ctx.textBaseline='middle';
+   const labelPositions=[];
+   for(const [id,points] of series){
+    if(this.hiddenDrivers.has(id))continue;
+    const visible=points.filter(p=>p[0]>=view.xMin&&p[0]<=view.xMax);
+    if(!visible.length)continue;
+    const end=visible.at(-1),px=x(end[0]),py=y(end[1]);
+    if(py<18||py>h-30)continue;
+    const meta=driverMeta.get(id)||{};
+    const label=String(meta.tla||meta.abbreviation||meta.name||'#'+id).slice(0,3).toUpperCase();
+    const width=ctx.measureText(label).width+8;
+    let ly=py;
+    for(let n=0;n<8&&labelPositions.some(p=>Math.abs(p.x-px)<width+12&&Math.abs(p.y-ly)<13);n++)
+     ly=py+(n%2===0?1:-1)*Math.ceil((n+1)/2)*13;
+    if(ly<20||ly>h-34)ly=py;
+    labelPositions.push({x:px,y:ly});
+    const lx=Math.min(w-width-3,px+5);
+    ctx.fillStyle='#0b1220';ctx.fillRect(lx,ly-8,width,16);
+    ctx.fillStyle=colours.get(id)||'#fff';ctx.fillText(label,lx+4,ly);
+   }
+   ctx.restore();
    // Both projections are time shifts at the same race distance:
    // +loss: where the selected driver emerges after stopping;
    // -loss: the symmetric boundary for a rival stopping behind them.
