@@ -934,7 +934,7 @@ class RaceTraceGPS extends HTMLElement {
    status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
     aligned.aligned.length+' aligned · reference car #'+referenceId+
     ' · '+(useLearned?'learned '+selected.length+' clean laps ('+typical.toFixed(1)+'s)':'leader GPS fallback')+
-    ' · '+profiledDrivers+' driver profiles / '+profiledPoints+' anchored samples · '+markers.size+' retired · '+stopped+' stopped · timing corrections +(this.applyTimingCorrections?'ON':'OFF')+' ('+correctedAnchors+' anchors / '+correctedDrivers+' cars) · gap at equal distance'+validationSummary;
+    ' · '+profiledDrivers+' driver profiles / '+profiledPoints+' anchored samples · '+markers.size+' retired · '+stopped+' stopped · timing corrections '+(this.applyTimingCorrections?'ON':'OFF')+' ('+correctedAnchors+' anchors / '+correctedDrivers+' cars) · gap at equal distance'+validationSummary;
   }catch(e){status.textContent='Experimental diagnostics: '+e.message;}
  }
 }
