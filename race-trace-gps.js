@@ -963,9 +963,12 @@ class RaceTraceGPS extends HTMLElement {
    // Outline in white, then colour the centre for contrast.
    for(const [id,point] of markers){
     if(this.hiddenDrivers.has(id))continue;
-    const referenceTime=timeAtDistance(point[1]);
-    if(!Number.isFinite(referenceTime))continue;
-    const px=x(point[1]),py=y(point[2]-referenceTime);
+    // The marker must use the same profiled, smoothed gap as its trace.
+    // The legacy timeAtDistance calculation has a different sign and
+    // reference profile, so it can put the X off-screen after the Y flip.
+    const endPoint=series.get(id)?.at(-1);
+    if(!endPoint)continue;
+    const px=x(endPoint[0]),py=y(endPoint[1]);
     // Draw only if the actual retirement point is inside the viewport.
     if(!Number.isFinite(px)||!Number.isFinite(py)||
        px<52||px>w-18||py<15||py>h-32)continue;
