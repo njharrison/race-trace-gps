@@ -208,35 +208,40 @@ class RaceTraceGPS extends HTMLElement {
   };
   this.shadowRoot.querySelector('#refshift').textContent=
    this.referenceLapOffset?'Reference lap '+(this.referenceLapOffset>0?'+':'')+this.referenceLapOffset:'';
-  // Preview dragging with a cheap compositor translation. Rebuild the
-  // underlying chart only on pointer release, not every pointer movement.
+  // Drag preview stays INSIDE the canvas: never transform the DOM element.
   canvas.onpointerdown=e=>{
    const rect=canvas.getBoundingClientRect();
    const px=(e.clientX-rect.left)/rect.width;
+   const snapshot=document.createElement('canvas');
+   snapshot.width=canvas.width;snapshot.height=canvas.height;
+   snapshot.getContext('2d').drawImage(canvas,0,0);
    this.drag={pointer:e.pointerId,x:e.clientX,y:e.clientY,
     zone:px<.25?'y':px>.75?'reference':'both',
     start:this.viewport?{...this.viewport}:null,
-    reference:this.referenceLapOffset,dx:0,dy:0};
-   canvas.style.transformOrigin='0 0';
+    reference:this.referenceLapOffset,dx:0,dy:0,snapshot};
    canvas.setPointerCapture(e.pointerId);
   };
   canvas.onpointermove=e=>{
    const drag=this.drag;if(!drag||drag.pointer!==e.pointerId||!this.viewport)return;
    drag.dx=e.clientX-drag.x;drag.dy=e.clientY-drag.y;
+   const rect=canvas.getBoundingClientRect();
+   const sx=canvas.width/rect.width,sy=canvas.height/rect.height;
+   const ctx=canvas.getContext('2d');
+   ctx.fillStyle='#0b1220';ctx.fillRect(0,0,canvas.width,canvas.height);
+   ctx.save();ctx.beginPath();ctx.rect(52,15,canvas.width-70,canvas.height-47);ctx.clip();
+   const offsetX=drag.zone==='both'?drag.dx*sx:0;
+   const offsetY=drag.zone==='reference'?0:drag.dy*sy;
+   ctx.drawImage(drag.snapshot,offsetX,offsetY);
+   ctx.restore();
    if(drag.zone==='reference'){
-    // One reference lap per 180 screen pixels, rather than 12 per chart.
     const steps=Math.round(drag.dy/180);
     this.shadowRoot.querySelector('#refshift').textContent=
      'Reference lap '+((drag.reference+steps)>0?'+':'')+(drag.reference+steps);
-    canvas.style.transform='translateY('+Math.max(-35,Math.min(35,drag.dy*.12))+'px)';
-   }else{
-    canvas.style.transform='translate('+
-     (drag.zone==='both'?drag.dx:0)+'px,'+drag.dy+'px)';
    }
   };
   const endDrag=e=>{
    const drag=this.drag;if(!drag||drag.pointer!==e.pointerId)return;
-   this.drag=null;canvas.style.transform='';
+   this.drag=null;
    if(!this.viewport)return;
    const rect=canvas.getBoundingClientRect();
    const dx=drag.dx/rect.width,dy=drag.dy/rect.height;
