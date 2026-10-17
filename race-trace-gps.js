@@ -273,6 +273,13 @@ class RaceTraceGPS extends HTMLElement {
   };
   if(!this.gps||!this.timing){status.textContent=this.error||'Waiting for GPS and timing recordings';return;}
   try{
+   // Heavy GPS projection, alignment and clean-lap learning are cached.
+   // Viewport, reference-time adjustment and smoothing must not invalidate it.
+   const key=[this.gps.samples.length,this.gps.samples.at(-1)?.recorded_at,
+    this.timing.samples.length,this.timing.samples.at(-1)?.timestamp].join(':');
+   if(!this.processed||this.processedKey!==key){
+    this.processedKey=key;
+    this.processed=(()=>{
    const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
    const geometry=RaceTraceCircuit.prepare(points);
    const frames=RaceTraceRecordingSync.gpsFrames(this.gps);
@@ -432,6 +439,13 @@ class RaceTraceGPS extends HTMLElement {
    const learned=selected.length>=5?Array.from({length:101},(_,j)=>
     j===0?0:j===100?1:median(selected.map(l=>l.bins[j]))):null;
    if(learned)for(let j=1;j<101;j++)learned[j]=Math.max(learned[j],learned[j-1]+1e-7);
+
+    return {traces,events,aligned,referenceId,ref,markers,stopped,
+      selected,typical,learned,cleanLaps};
+    })();
+   }
+   const {traces,events,aligned,referenceId,ref,markers,stopped,
+    selected,typical,learned,cleanLaps}=this.processed;
    const useLearned=this.referenceMode==='learned'&&learned!==null;
    const firstCross=events.filter(e=>String(e[0])===referenceId&&e[1]===2)[0];
    const originTime=firstCross?.[2]??crossingAt(ref,1);
@@ -468,7 +482,16 @@ class RaceTraceGPS extends HTMLElement {
    // complete laps against their own clean-lap median; use two-lap windows
    // to capture entry and exit across the timing line. A lap is a candidate
    // only when GPS shows a sustained stop or a pronounced slowdown.
+   if(!this.pitCache||this.pitCacheKey!==this.processedKey){
+    this.pitCacheKey=this.processedKey;
+    this.pitCache=(()=>{
    const pitStops=[];
+   const gpsByDriver=new Map();
+   const frames=RaceTraceRecordingSync.gpsFrames(this.gps);
+   for(const frame of frames)for(const [id,x,y] of frame.d){
+    if(!gpsByDriver.has(id))gpsByDriver.set(id,[]);
+    gpsByDriver.get(id).push({t:frame.t,x,y});
+   }
    for(const [id,track] of traces){
     const completed=[];
     for(let lap=Math.max(1,Math.ceil(track[0][1]));lap<track.at(-1)[1];lap++){
@@ -502,6 +525,11 @@ class RaceTraceGPS extends HTMLElement {
      pitStops.push({id,lap:p.lap,loss:slowdown,neutral,method:'lap-excess'});
     }
    }
+
+     return pitStops;
+    })();
+   }
+   const pitStops=this.pitCache;
    const validStops=pitStops.filter(p=>!p.neutral&&p.loss>=9&&p.loss<=60)
     .sort((a,b)=>a.loss-b.loss);
    const quantile=(values,q)=>{
