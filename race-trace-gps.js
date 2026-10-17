@@ -781,6 +781,12 @@ class RaceTraceGPS extends HTMLElement {
    const referenceSeconds=(Number.isFinite(typical)?typical:100)+this.referenceLapAdjustment;
    const profileFor=id=>this.useDriverProfiles?
     (profiles.get(id)||sharedProfile):(sharedProfile||profiles.get(id));
+   // This renderer runs outside the preprocessing closure, so it needs
+   // its own median helper for per-driver completed-lap durations.
+   const median=values=>{
+    const sorted=values.slice().sort((a,b)=>a-b);
+    return sorted[Math.floor(sorted.length/2)];
+   };
    const makeModel=(track,profile)=>{
     const first=track[0],last=track.at(-1),crossings=new Map();
     for(let k=Math.max(1,Math.floor(first[1]));k<=Math.ceil(last[1]);k++){
