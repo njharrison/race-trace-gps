@@ -162,7 +162,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceOffi
 class RaceTraceGPS extends HTMLElement {
  constructor(){
   super();this.attachShadow({mode:'open'});this.gps=null;this.timing=null;
-  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.pitEnabled=true;this.smoothingSeconds=0;
+  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.pitEnabled=true;this.smoothingSeconds=0;this.viewport=null;this.referenceLapOffset=0;this.drag=null;
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
@@ -190,7 +190,7 @@ class RaceTraceGPS extends HTMLElement {
  draw(){
   if(!this.shadowRoot||!this.config)return;
   if(!this.shadowRoot.querySelector('canvas')){
-   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:auto;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button,.controls input{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.pit{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;font:12px system-ui}.pit input{width:75px}.smooth input{width:125px;vertical-align:middle}.smooth{font:12px system-ui}.pitlog{font:12px system-ui;margin:5px 0;color:var(--secondary-text-color,#aab)}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer}.legend button.off{opacity:.35}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="showall">Show all drivers</button><label class="smooth">Smoothing <input id="smoothing" type="range" min="0" max="10" step="1" value="0"> <span id="smoothingvalue">0s</span></label></div><div class="pit"><label><input type="checkbox" id="pitshow" checked> Pit projections</label><label>Driver <select id="pitdriver"></select></label><label>Pit loss <input id="pitloss" type="number" min="0" max="180" step="0.1" placeholder="—"> s</label><button id="pitreset" disabled>Calculating…</button></div><div class="pitlog" id="pitlog"></div><canvas width="1100" height="460"></canvas><div class="legend" id="legend"></div></ha-card>';
+   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:auto;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button,.controls input{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.pit{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;font:12px system-ui}.pit input{width:75px}.smooth input{width:125px;vertical-align:middle}.smooth{font:12px system-ui}.pitlog{font:12px system-ui;margin:5px 0;color:var(--secondary-text-color,#aab)}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer}.legend button.off{opacity:.35}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="showall">Show all drivers</button><button id="resetview">Reset view</button><span id="refshift"></span><label class="smooth">Smoothing <input id="smoothing" type="range" min="0" max="10" step="1" value="0"> <span id="smoothingvalue">0s</span></label></div><div class="pit"><label><input type="checkbox" id="pitshow" checked> Pit projections</label><label>Driver <select id="pitdriver"></select></label><label>Pit loss <input id="pitloss" type="number" min="0" max="180" step="0.1" placeholder="—"> s</label><button id="pitreset" disabled>Calculating…</button></div><div class="pitlog" id="pitlog"></div><canvas width="1100" height="460"></canvas><div class="legend" id="legend"></div></ha-card>';
   }
   const status=this.shadowRoot.querySelector('#status'),canvas=this.shadowRoot.querySelector('canvas');
   const refSelect=this.shadowRoot.querySelector('#reference');
@@ -202,6 +202,55 @@ class RaceTraceGPS extends HTMLElement {
   refSelect.onchange=()=>{this.referenceMode=refSelect.value;this.draw();};
   this.shadowRoot.querySelector('#showall').onclick=()=>{this.hiddenDrivers.clear();this.draw();};
   canvas.style.height=this.config.height+'px';
+  canvas.style.touchAction='none';
+  this.shadowRoot.querySelector('#resetview').onclick=()=>{
+   this.viewport=null;this.referenceLapOffset=0;this.draw();
+  };
+  this.shadowRoot.querySelector('#refshift').textContent=
+   this.referenceLapOffset?'Reference lap '+(this.referenceLapOffset>0?'+':'')+this.referenceLapOffset:'';
+  canvas.onpointerdown=e=>{
+   const rect=canvas.getBoundingClientRect();
+   const px=(e.clientX-rect.left)/rect.width;
+   this.drag={pointer:e.pointerId,x:e.clientX,y:e.clientY,
+    zone:px<.25?'y':px>.75?'reference':'both',
+    start:this.viewport?{...this.viewport}:null,
+    reference:this.referenceLapOffset};
+   canvas.setPointerCapture(e.pointerId);
+  };
+  canvas.onpointermove=e=>{
+   const drag=this.drag;if(!drag||drag.pointer!==e.pointerId||!this.viewport)return;
+   const rect=canvas.getBoundingClientRect();
+   const dx=(e.clientX-drag.x)/rect.width;
+   const dy=(e.clientY-drag.y)/rect.height;
+   if(drag.zone==='reference'){
+    this.referenceLapOffset=drag.reference+Math.round(-dx*12);
+   }else{
+    const start=drag.start||this.viewport;
+    const xr=start.xMax-start.xMin,yr=start.yMax-start.yMin;
+    this.viewport={...start,
+     xMin:start.xMin-(drag.zone==='both'?dx*xr:0),
+     xMax:start.xMax-(drag.zone==='both'?dx*xr:0),
+     yMin:start.yMin-dy*yr,yMax:start.yMax-dy*yr};
+   }
+   this.draw();
+  };
+  const endDrag=e=>{if(this.drag?.pointer===e.pointerId)this.drag=null;};
+  canvas.onpointerup=endDrag;canvas.onpointercancel=endDrag;
+  canvas.onwheel=e=>{
+   e.preventDefault();
+   if(!this.viewport)return;
+   const rect=canvas.getBoundingClientRect();
+   const fx=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
+   const fy=Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height));
+   const factor=e.deltaY>0?1.2:1/1.2;
+   const v=this.viewport;
+   const cx=v.xMin+fx*(v.xMax-v.xMin),cy=v.yMin+fy*(v.yMax-v.yMin);
+   const xr=Math.max(.15,Math.min(100,(v.xMax-v.xMin)*factor));
+   const yr=Math.max(1,Math.min(2000,(v.yMax-v.yMin)*factor));
+   this.viewport={xMin:cx-fx*xr,xMax:cx+(1-fx)*xr,
+    yMin:cy-fy*yr,yMax:cy+(1-fy)*yr};
+   this.draw();
+  };
   if(!this.gps||!this.timing){status.textContent=this.error||'Waiting for GPS and timing recordings';return;}
   try{
    const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
@@ -506,15 +555,18 @@ class RaceTraceGPS extends HTMLElement {
    if(maxGap-minGap<5){minGap-=2;maxGap+=2;}
    const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;
    ctx.clearRect(0,0,w,h);ctx.fillStyle='#0b1220';ctx.fillRect(0,0,w,h);
-   const x=v=>52+(v-minX)/Math.max(.001,maxX-minX)*(w-76);
-   const y=v=>20+(v-minGap)/(maxGap-minGap)*(h-60);
+   if(!this.viewport)this.viewport={xMin:minX,xMax:maxX,yMin:minGap,yMax:maxGap};
+   const view=this.viewport;
+   const x=v=>52+(v-view.xMin)/Math.max(.001,view.xMax-view.xMin)*(w-76);
+   const y=v=>20+(v+this.referenceLapOffset*(Number.isFinite(typical)?typical:100)-view.yMin)/
+    Math.max(.001,view.yMax-view.yMin)*(h-60);
    ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.font='12px system-ui';
-   for(let lap=Math.ceil(minX);lap<=maxX;lap++){
+   for(let lap=Math.ceil(view.xMin);lap<=view.xMax;lap++){
     ctx.beginPath();ctx.moveTo(x(lap),15);ctx.lineTo(x(lap),h-32);ctx.stroke();
     ctx.fillStyle='#aab';ctx.fillText('Lap '+lap,x(lap)+3,h-12);
    }
-   const gapStep=Math.max(1,Math.ceil((maxGap-minGap)/8));
-   for(let g=Math.ceil(minGap/gapStep)*gapStep;g<=maxGap;g+=gapStep){
+   const gapStep=Math.max(1,Math.ceil((view.yMax-view.yMin)/8));
+   for(let g=Math.ceil(view.yMin/gapStep)*gapStep;g<=view.yMax;g+=gapStep){
     ctx.beginPath();ctx.moveTo(50,y(g));ctx.lineTo(w-18,y(g));ctx.stroke();
     ctx.fillStyle='#aab';ctx.fillText(g+'s',4,y(g)+4);
    }
