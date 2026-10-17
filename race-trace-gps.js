@@ -604,6 +604,8 @@ class RaceTraceGPS extends HTMLElement {
    // should not teach the clean-racing profile.
    const driverProfiles=new Map();
    const profileCounts=new Map();
+   // Learn each car's distance/time shape independently, as soon as one
+   // complete clean racing lap is available. Median multiple laps later.
    for(const [id,track] of eligible){
     const samples=[];
     const first=Math.max(1,Math.ceil(track[0][1]));
@@ -627,11 +629,10 @@ class RaceTraceGPS extends HTMLElement {
     const localMedian=median(durations);
     const clean=samples.filter(p=>Math.abs(p.duration-localMedian)<8&&
       (!Number.isFinite(typical)||p.duration<typical+10));
-    if(clean.length<2)continue;
+    if(!clean.length)continue;
     const profile=Array.from({length:101},(_,j)=>
       j===0?0:j===100?1:median(clean.map(p=>p.bins[j])));
-    for(let j=1;j<100;j++)
-     profile[j]=Math.min(1,Math.max(profile[j-1],profile[j]));
+    for(let j=1;j<100;j++)profile[j]=Math.min(1,Math.max(profile[j-1],profile[j]));
     driverProfiles.set(id,profile);
     profileCounts.set(id,clean.length);
    }
@@ -791,8 +792,13 @@ class RaceTraceGPS extends HTMLElement {
      // Before a clean-lap pace profile exists, use the leader's observed
      // distance/time relationship instead of constant seconds per lap.
      // A linear reference produces corner-by-corner speed waves in every trace.
+     // Each driver's own clean-lap shape removes its characteristic
+     // corner-speed oscillations. Until learned, use the shared clean-lap
+     // profile; only fall back to leader GPS when no profile exists at all.
      const gpsReference=!profile?timeAtDistance(d):null;
-     const referenceTime=gpsReference??(origin+(lap+progress-1)*referenceSeconds);
+     const referenceTime=profile?
+      origin+(lap+progress-1)*referenceSeconds:
+      (gpsReference??(origin+(lap+fraction-1)*referenceSeconds));
      segment.push({d,t:p[2],raw:referenceTime-p[2]});
      prev=p;
     }
