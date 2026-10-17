@@ -722,7 +722,7 @@ class RaceTraceGPS extends HTMLElement {
      const d=p[1],lap=Math.floor(d),fraction=d-lap;
      const progress=profile?profileEval(profile,fraction):fraction;
      const referenceTime=origin+(lap+progress-1)*referenceSeconds;
-     segment.push({d,t:p[2],raw:p[2]-referenceTime});
+     segment.push({d,t:p[2],raw:referenceTime-p[2]});
      prev=p;
     }
     if(segment.length)segments.push(segment);
