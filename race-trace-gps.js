@@ -576,8 +576,8 @@ class RaceTraceGPS extends HTMLElement {
     const chosen=series.get(this.pitDriver);
     if(chosen?.length){
      for(const sign of [-1,1]){
-      ctx.save();ctx.strokeStyle=sign>0?'#fbbf24':'#22d3ee';
-      ctx.lineWidth=2.5;ctx.globalAlpha=.95;ctx.setLineDash(sign>0?[9,5]:[3,5]);
+      ctx.save();ctx.strokeStyle='#ffffff';
+      ctx.lineWidth=1.8;ctx.globalAlpha=.9;ctx.setLineDash([2,5]);
       ctx.beginPath();
       chosen.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1]+sign*effectiveLoss)):
        ctx.moveTo(x(p[0]),y(p[1]+sign*effectiveLoss)));
