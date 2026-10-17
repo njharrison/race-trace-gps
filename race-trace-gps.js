@@ -454,6 +454,44 @@ class RaceTraceGPS extends HTMLElement {
    }
    const {traces,events,aligned,referenceId,ref,markers,stopped,
     selected,typical,learned,cleanLaps}=this.processed;
+   // Independent validation: compare interpolated GPS crossing times with
+   // official lap-transition timestamps at the same finish-line distance.
+   // This does not modify the graph or the reference-lap adjustment.
+   const crossingChecks=[];
+   for(const [id,lap,tOfficial] of events){
+    const track=traces.get(String(id));
+    if(!track||!Number.isFinite(tOfficial))continue;
+    const distance=lap-1;
+    const tGps=crossingAt(track,distance);
+    if(Number.isFinite(tGps))
+     crossingChecks.push({id:String(id),lap,official:tOfficial,gps:tGps,
+      error:tGps-tOfficial});
+   }
+   const crossingErrors=crossingChecks.map(p=>Math.abs(p.error)).sort((a,b)=>a-b);
+   const medianCrossingError=crossingErrors.length?
+    crossingErrors[Math.floor(crossingErrors.length/2)]:null;
+   const crossingOutliers=crossingChecks.filter(p=>Math.abs(p.error)>2);
+   const orderingChecks=[];
+   const byLap=new Map();
+   for(const p of crossingChecks){
+    if(!byLap.has(p.lap))byLap.set(p.lap,[]);
+    byLap.get(p.lap).push(p);
+   }
+   for(const [lap,drivers] of byLap){
+    for(let i=0;i<drivers.length;i++)for(let j=i+1;j<drivers.length;j++){
+     const a=drivers[i],b=drivers[j];
+     const officialDelta=a.official-b.official,gpsDelta=a.gps-b.gps;
+     if(Math.abs(officialDelta)<.25)continue;
+     if(Math.sign(officialDelta)!==Math.sign(gpsDelta))
+      orderingChecks.push({lap,a:a.id,b:b.id,officialDelta,gpsDelta});
+    }
+   }
+   const validationSummary=' · GPS vs official: '+crossingChecks.length+
+    ' crossings, median '+(medianCrossingError===null?'n/a':medianCrossingError.toFixed(1)+'s')+
+    ', >2s '+crossingOutliers.length+
+    ', reversed pairs '+orderingChecks.length+
+    (orderingChecks.length?' (e.g. L'+orderingChecks[0].lap+' #'+orderingChecks[0].a+
+     '/#'+orderingChecks[0].b+')':'');
    const useLearned=this.referenceMode==='learned'&&!!learned;
    const firstCross=events.filter(e=>String(e[0])===referenceId&&e[1]===2)[0];
    const originTime=firstCross?.[2]??crossingAt(ref,1);
@@ -745,7 +783,7 @@ class RaceTraceGPS extends HTMLElement {
    status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
     aligned.aligned.length+' aligned · reference car #'+referenceId+
     ' · '+(useLearned?'learned '+selected.length+' clean laps ('+typical.toFixed(1)+'s)':'leader GPS fallback')+
-    ' · '+markers.size+' retired · '+stopped+' stopped · gap at equal distance';
+    ' · '+markers.size+' retired · '+stopped+' stopped · gap at equal distance'+validationSummary;
   }catch(e){status.textContent='Experimental diagnostics: '+e.message;}
  }
 }
