@@ -208,33 +208,48 @@ class RaceTraceGPS extends HTMLElement {
   };
   this.shadowRoot.querySelector('#refshift').textContent=
    this.referenceLapOffset?'Reference lap '+(this.referenceLapOffset>0?'+':'')+this.referenceLapOffset:'';
+  // Preview dragging with a cheap compositor translation. Rebuild the
+  // underlying chart only on pointer release, not every pointer movement.
   canvas.onpointerdown=e=>{
    const rect=canvas.getBoundingClientRect();
    const px=(e.clientX-rect.left)/rect.width;
    this.drag={pointer:e.pointerId,x:e.clientX,y:e.clientY,
     zone:px<.25?'y':px>.75?'reference':'both',
     start:this.viewport?{...this.viewport}:null,
-    reference:this.referenceLapOffset};
+    reference:this.referenceLapOffset,dx:0,dy:0};
+   canvas.style.transformOrigin='0 0';
    canvas.setPointerCapture(e.pointerId);
   };
   canvas.onpointermove=e=>{
    const drag=this.drag;if(!drag||drag.pointer!==e.pointerId||!this.viewport)return;
-   const rect=canvas.getBoundingClientRect();
-   const dx=(e.clientX-drag.x)/rect.width;
-   const dy=(e.clientY-drag.y)/rect.height;
+   drag.dx=e.clientX-drag.x;drag.dy=e.clientY-drag.y;
    if(drag.zone==='reference'){
-    this.referenceLapOffset=drag.reference+Math.round(dy*12);
+    // One reference lap per 180 screen pixels, rather than 12 per chart.
+    const steps=Math.round(drag.dy/180);
+    this.shadowRoot.querySelector('#refshift').textContent=
+     'Reference lap '+((drag.reference+steps)>0?'+':'')+(drag.reference+steps);
+    canvas.style.transform='translateY('+Math.max(-35,Math.min(35,drag.dy*.12))+'px)';
    }else{
-    const start=drag.start||this.viewport;
-    const xr=start.xMax-start.xMin,yr=start.yMax-start.yMin;
-    this.viewport={...start,
-     xMin:start.xMin-(drag.zone==='both'?dx*xr:0),
-     xMax:start.xMax-(drag.zone==='both'?dx*xr:0),
-     yMin:start.yMin-dy*yr,yMax:start.yMax-dy*yr};
+    canvas.style.transform='translate('+
+     (drag.zone==='both'?drag.dx:0)+'px,'+drag.dy+'px)';
+   }
+  };
+  const endDrag=e=>{
+   const drag=this.drag;if(!drag||drag.pointer!==e.pointerId)return;
+   this.drag=null;canvas.style.transform='';
+   if(!this.viewport)return;
+   const rect=canvas.getBoundingClientRect();
+   const dx=drag.dx/rect.width,dy=drag.dy/rect.height;
+   if(drag.zone==='reference'){
+    this.referenceLapOffset=drag.reference+Math.round(drag.dy/180);
+   }else{
+    const v=drag.start||this.viewport,xr=v.xMax-v.xMin,yr=v.yMax-v.yMin;
+    this.viewport={...v,xMin:v.xMin-(drag.zone==='both'?dx*xr:0),
+     xMax:v.xMax-(drag.zone==='both'?dx*xr:0),
+     yMin:v.yMin-dy*yr,yMax:v.yMax-dy*yr};
    }
    this.draw();
   };
-  const endDrag=e=>{if(this.drag?.pointer===e.pointerId)this.drag=null;};
   canvas.onpointerup=endDrag;canvas.onpointercancel=endDrag;
   canvas.onwheel=e=>{
    e.preventDefault();
