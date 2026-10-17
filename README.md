@@ -2,7 +2,7 @@
 
 Experimental Home Assistant GPS-based F1 race trace, independently installable through HACS.
 
-**Status:** early prototype. This is a distance-vs-recording-time diagnostic chart, **not yet** the approved Singapore race-gap renderer. It currently downloads both full recordings every five seconds, so do not leave it running for long races until incremental loading is added. Production `custom:f1-race-trace` is unaffected.
+**Status:** early prototype. This now plots time gap at equal race distance, using the furthest-progressed car as a reference. It is an initial gap renderer, **not yet** the full approved Singapore visualisation. It currently downloads both full recordings every five seconds, so do not leave it running for long races until incremental loading is added. Production `custom:f1-race-trace` is unaffected.
 
 ## Install through HACS
 
@@ -25,4 +25,8 @@ Both files must be accessible from your browser and belong to the same session. 
 
 Source is bundled from the shared geometry, timing-sync, start/finish calibration, and official timing-led alignment modules on the `dev/shared-race-trace-engine` branch of [home-assistant-f1-race-trace](https://github.com/njharrison/home-assistant-f1-race-trace). No production bundle is overwritten.
 
-Current limitations: no live-gap renderer, no incremental GPS downloads, no automated CI verification of this distributed bundle, and no guarantee of reliable start/finish calibration until enough official lap transitions are recorded. GPS points use simple nearest-centreline projection; complex pit lane paths may need trajectory-aware projection. Recording files served under `/local/` should not contain private credentials.
+Current limitations: no polished Singapore-style renderer or interactive controls, no incremental GPS downloads, no automated CI verification of this distributed bundle, and no guarantee of reliable start/finish calibration until enough official lap transitions are recorded. GPS points use simple nearest-centreline projection; complex pit lane paths may need trajectory-aware projection. Recording files served under `/local/` should not contain private credentials.
+
+## Stationary drivers and gap chart
+
+The card ends a driver's final trace at the beginning of a stationary GPS spell lasting at least five seconds. If the driver resumes moving, the intermediate stop remains part of their trajectory. The Y-axis is seconds behind/ahead of the furthest-progressed car at the same distance, with the reference trace in white. Outlying gap values are visually clipped at the 1st/99th percentiles to keep the graph readable; underlying samples are retained.
