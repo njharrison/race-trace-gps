@@ -243,7 +243,7 @@ class RaceTraceGPS extends HTMLElement {
     for(const d of sample.drivers||[]){
      const id=String(d.id??d.racing_number??'');
      if(!id||retirementAt.has(id))continue;
-     if(d.retired===true||[d.status,d.driver_status,d.race_status].some(retiredStatus))
+     if(d.retired===true||[d.status,d.driver_status,d.race_status,d.gap,d.gap_to_leader].some(retiredStatus))
       retirementAt.set(id,Number(sample.timestamp));
     }
    }
@@ -279,7 +279,8 @@ class RaceTraceGPS extends HTMLElement {
     if(!Number.isFinite(stationaryStart))continue;
     const stationaryFor=endTime-stationaryStart;
     if(Number.isFinite(retirement)){
-     // Do not manufacture a retirement location when GPS is still moving.
+     // If GPS continues moving into the retirement announcement, use the
+     // last observation at or before the official OUT transition.
      const markerIndex=bounded.findLastIndex(p=>p[2]<=stationaryStart);
      if(markerIndex>=0){
       const lastMoving=bounded[markerIndex];
@@ -426,14 +427,14 @@ class RaceTraceGPS extends HTMLElement {
     ctx.fillStyle=p.type==='VSC'?'rgba(234,179,8,.16)':'rgba(251,146,60,.16)';
     ctx.strokeStyle=p.type==='VSC'?'#eab308':'#fb923c';
     ctx.beginPath();
-    ctx.moveTo(x(start+minGap/lapSeconds),y(minGap));
-    ctx.lineTo(x(end+minGap/lapSeconds),y(minGap));
-    ctx.lineTo(x(end+maxGap/lapSeconds),y(maxGap));
-    ctx.lineTo(x(start+maxGap/lapSeconds),y(maxGap));
+    ctx.moveTo(x(start-minGap/lapSeconds),y(minGap));
+    ctx.lineTo(x(end-minGap/lapSeconds),y(minGap));
+    ctx.lineTo(x(end-maxGap/lapSeconds),y(maxGap));
+    ctx.lineTo(x(start-maxGap/lapSeconds),y(maxGap));
     ctx.closePath();ctx.fill();
     ctx.setLineDash([5,5]);ctx.beginPath();
-    ctx.moveTo(x(start+minGap/lapSeconds),y(minGap));
-    ctx.lineTo(x(start+maxGap/lapSeconds),y(maxGap));ctx.stroke();ctx.setLineDash([]);
+    ctx.moveTo(x(start-minGap/lapSeconds),y(minGap));
+    ctx.lineTo(x(start-maxGap/lapSeconds),y(maxGap));ctx.stroke();ctx.setLineDash([]);
     ctx.font='bold 13px system-ui';ctx.fillText(p.type,x(start)+4,30);
    }
    const colors=['#fb7185','#38bdf8','#a3e635','#fbbf24','#c084fc','#2dd4bf','#f472b6','#93c5fd'];
@@ -484,7 +485,7 @@ class RaceTraceGPS extends HTMLElement {
    status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
     aligned.aligned.length+' aligned · reference car #'+referenceId+
     ' · '+(useLearned?'learned '+selected.length+' clean laps ('+typical.toFixed(1)+'s)':'leader GPS fallback')+
-    ' · '+stopped+' stationary traces terminated · gap at equal distance';
+    ' · '+markers.size+' retired (X) · '+stopped+' stopped · gap at equal distance';
   }catch(e){status.textContent='Experimental diagnostics: '+e.message;}
  }
 }
