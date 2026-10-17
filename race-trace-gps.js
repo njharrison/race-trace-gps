@@ -514,8 +514,6 @@ class RaceTraceGPS extends HTMLElement {
     ctx.moveTo(visibleX-size,visibleY+size);ctx.lineTo(visibleX+size,visibleY-size);
     ctx.strokeStyle='#ffffff';ctx.lineWidth=3.5;ctx.stroke();
     ctx.strokeStyle='#ef4444';ctx.lineWidth=2;ctx.stroke();
-    ctx.font='11px system-ui';ctx.fillStyle='#fff';
-    ctx.fillText('#'+id+(offscale?' (off scale)':''),Math.min(w-135,visibleX+9),Math.max(20,visibleY-7));
     ctx.lineCap='butt';
    }
    const retirementDebug=[...markers].map(([id,p])=>{
