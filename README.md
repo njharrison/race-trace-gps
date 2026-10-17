@@ -30,3 +30,9 @@ Current limitations: no polished Singapore-style renderer or interactive control
 ## Stationary drivers and gap chart
 
 The card ends a driver's final trace at the beginning of a stationary GPS spell lasting at least five seconds. If the driver resumes moving, the intermediate stop remains part of their trajectory. The Y-axis is seconds behind/ahead of the furthest-progressed car at the same distance, with the reference trace in white. Outlying gap values are visually clipped at the 1st/99th percentiles to keep the graph readable; underlying samples are retained.
+
+## Reference and driver controls
+
+The default **Learned clean-lap pace** reference calculates a median normalised 101-point lap-time profile from qualifying complete laps across all cars. It needs at least five accepted clean laps, otherwise it falls back to the furthest-progressed car's GPS trace. Switch the reference in the card dropdown to compare both methods. This is an initial implementation and has not yet been verified against the offline Singapore golden master.
+
+Driver buttons below the graph toggle visibility; **Show all drivers** resets the selection. Labels are taken from the latest timing sample when available, falling back to the racing number. The chart only draws laps from lap 1 onwards, while pre-race GPS remains available for calibration.
