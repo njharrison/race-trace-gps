@@ -606,6 +606,8 @@ class RaceTraceGPS extends HTMLElement {
       selected,typical,learned,cleanLaps};
     })();
    }
+   // Older cached preprocessing results may predate the driver profile field.
+   if(!this.processed.driverProfiles){this.processed=null;this.processedKey=null;return this.draw();}
    const {traces,driverProfiles,correctedTraces,profiledTraces,profiledDrivers,profiledPoints,profileCounts,correctedAnchors,correctedDrivers,projectionStats,events,aligned,referenceId,ref,markers,stopped,
     selected,typical,learned,cleanLaps}=this.processed;
    // Independent validation: compare interpolated GPS crossing times with
