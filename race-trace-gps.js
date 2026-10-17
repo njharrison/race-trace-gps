@@ -166,7 +166,7 @@ class RaceTraceGPS extends HTMLElement {
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
-   timing_url:'/local/f1-race-trace/live-recording.json',height:460,...config};
+   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',height:460,...config};
   this.draw();
  }
  set hass(hass){this._hass=hass;}
@@ -261,7 +261,8 @@ class RaceTraceGPS extends HTMLElement {
     const team=meta.team_name||meta.team||meta.constructor_name||'Unknown';
     const tyre=meta.tyre_compound||meta.compound||meta.tire_compound||meta.tyre||'Unknown';
     const pos=meta.position??'Unknown';
-    const lap=Math.max(1,Math.floor(closest.d)+1);
+    const lap=Number.isFinite(Number(meta.completed_laps))&&Number(meta.completed_laps)>0?
+     Number(meta.completed_laps):Math.max(1,Math.floor(closest.d)+1);
     tooltip.replaceChildren();
     const heading=document.createElement('strong');
     heading.textContent=label+' #'+closest.id;
@@ -1016,6 +1017,24 @@ class RaceTraceGPS extends HTMLElement {
    const driverMeta=new Map();
    for(const sample of this.timing.samples)for(const d of sample.drivers||[]){
     const id=String(d.id??'');if(id)driverMeta.set(id,d);
+   }
+   // The original timing-based card gets authoritative driver/team colours
+   // from this live HA sensor, not the reduced recorder JSON.
+   const liveState=this._hass?.states?.[this.config.driver_entity];
+   const liveDrivers=liveState?.attributes?.drivers;
+   if(Array.isArray(liveDrivers))for(const d of liveDrivers){
+    const id=String(d.racing_number??d.id??d.driver_number??'');
+    if(!id)continue;
+    const prior=driverMeta.get(id)||{};
+    driverMeta.set(id,{...prior,
+     tla:d.tla||prior.tla,
+     name:d.name||prior.name,
+     team_color:d.team_color||prior.team_color,
+     team_name:d.team_name||d.team||prior.team_name,
+     tyre_compound:d.tyre_compound||d.compound||d.tyre||prior.tyre_compound,
+     position:d.current_position??d.position??prior.position,
+     completed_laps:d.completed_laps??prior.completed_laps
+    });
    }
    const legend=this.shadowRoot.querySelector('#legend');legend.replaceChildren();
    this.hoverSeries={series,meta:driverMeta};
