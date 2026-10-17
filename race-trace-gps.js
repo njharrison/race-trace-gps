@@ -788,7 +788,11 @@ class RaceTraceGPS extends HTMLElement {
      }
      const d=p[1],lap=Math.floor(d),fraction=d-lap;
      const progress=profile?profileEval(profile,fraction):fraction;
-     const referenceTime=origin+(lap+progress-1)*referenceSeconds;
+     // Before a clean-lap pace profile exists, use the leader's observed
+     // distance/time relationship instead of constant seconds per lap.
+     // A linear reference produces corner-by-corner speed waves in every trace.
+     const gpsReference=!profile?timeAtDistance(d):null;
+     const referenceTime=gpsReference??(origin+(lap+progress-1)*referenceSeconds);
      segment.push({d,t:p[2],raw:referenceTime-p[2]});
      prev=p;
     }
