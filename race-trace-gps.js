@@ -267,33 +267,55 @@ class RaceTraceGPS extends HTMLElement {
     const bounded=traces.get(id);
     if(!bounded.length)continue;
     const endTime=bounded.at(-1)[2];
-    // Find the beginning of the final sustained stop by working backwards
-    // from the final GPS position. A 5 m radius tolerates quantisation/jitter;
-    // a one-metre coordinate change must not reset the stationary clock.
-    const endGPS=gps.findLastIndex(p=>p.t<=endTime);
-    if(endGPS<1)continue;
-    const finalPosition=gps[endGPS];
-    let stopIndex=endGPS;
-    while(stopIndex>0&&
-      Math.hypot(gps[stopIndex-1].x-finalPosition.x,
-                 gps[stopIndex-1].y-finalPosition.y)<=5)
-     stopIndex--;
-    const stationaryStart=gps[stopIndex].t;
-    const stationaryFor=endTime-stationaryStart;
+    // Locate a sustained stop BEFORE retirement. GPS may resume moving
+    // when a retired car is recovered/towed; that later motion is not racing.
+    // Search for the earliest 30-second stationary spell in the last ten
+    // minutes before the official OUT transition.
+    let stopIndex=-1;
     if(Number.isFinite(retirement)){
-     // Place the marker at the *start* of the sustained stop, not at the
-     // official OUT announcement minutes later.
-     const markerIndex=bounded.findLastIndex(p=>p[2]<=stationaryStart);
+     for(let i=1;i<gps.length;i++){
+      if(gps[i].t>retirement)break;
+      if(gps[i].t<retirement-600)continue;
+      const j=gps.findIndex((p,k)=>k>i&&p.t>=gps[i].t+30);
+      if(j<0||gps[j].t>retirement)continue;
+      let stable=true;
+      for(let k=i;k<=j;k++){
+       if(Math.hypot(gps[k].x-gps[i].x,gps[k].y-gps[i].y)>5){stable=false;break;}
+      }
+      if(stable){
+       const idx=bounded.findLastIndex(p=>p[2]<=gps[i].t);
+       if(idx>=0&&bounded[idx][1]>=1){stopIndex=i;break;}
+      }
+     }
+    }
+    if(stopIndex>=0){
+     const markerIndex=bounded.findLastIndex(p=>p[2]<=gps[stopIndex].t);
      if(markerIndex>=0){
       const lastMoving=bounded[markerIndex];
       traces.set(id,bounded.slice(0,markerIndex+1));
       markers.set(id,lastMoving);
       stopped++;
      }
-    }else if(stationaryFor>=5){
-     const cutoff=stationaryStart+5;
-     traces.set(id,bounded.filter(p=>p[2]<=cutoff));
-     stopped++;
+    }else{
+     // For a non-retired driver retain at most five seconds of the
+     // current stationary spell, allowing small GPS coordinate jitter.
+     const endGPS=gps.findLastIndex(p=>p.t<=endTime);
+     if(endGPS<1)continue;
+     const finalPosition=gps[endGPS];
+     let currentStop=endGPS;
+     while(currentStop>0&&
+      Math.hypot(gps[currentStop-1].x-finalPosition.x,
+                 gps[currentStop-1].y-finalPosition.y)<=5)
+      currentStop--;
+     const stationaryStart=gps[currentStop].t;
+     if(endTime-stationaryStart>=5){
+      traces.set(id,bounded.filter(p=>p[2]<=stationaryStart+5));
+      stopped++;
+     }
+     if(Number.isFinite(retirement)){
+      // No confident stop detected: do not invent a retirement location.
+      traces.set(id,bounded);
+     }
     }
    }
    // Learn a race-wide pace curve from clean, complete laps across drivers.
