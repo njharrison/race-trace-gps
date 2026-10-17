@@ -470,18 +470,25 @@ class RaceTraceGPS extends HTMLElement {
     ctx.lineWidth=id===referenceId&&!useLearned?2.5:1.5;ctx.beginPath();
     points.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1])):ctx.moveTo(x(p[0]),y(p[1])));
     ctx.stroke();
-    if(markers.has(id)){
-     const point=markers.get(id);
-     const t=timeAtDistance(point[1]);
-     if(t!==null&&point[1]>=minX&&point[1]<=maxX){
-      const px=x(point[1]),py=y(point[2]-t),size=8;
-      ctx.strokeStyle=color;ctx.lineWidth=3.5;ctx.setLineDash([]);
-      ctx.beginPath();ctx.moveTo(px-size,py-size);ctx.lineTo(px+size,py+size);
-      ctx.moveTo(px-size,py+size);ctx.lineTo(px+size,py-size);ctx.stroke();
-     }
-    }
+
    }
    ctx.restore();
+   // Render retirement crosses last so other drivers cannot obscure them.
+   // Outline in white, then colour the centre for contrast.
+   for(const [id,point] of markers){
+    if(this.hiddenDrivers.has(id))continue;
+    const referenceTime=timeAtDistance(point[1]);
+    if(!Number.isFinite(referenceTime))continue;
+    const px=x(point[1]),py=y(point[2]-referenceTime);
+    if(px<52||px>w-18||py<15||py>h-32)continue;
+    const size=11;
+    ctx.lineCap='round';ctx.setLineDash([]);
+    ctx.beginPath();ctx.moveTo(px-size,py-size);ctx.lineTo(px+size,py+size);
+    ctx.moveTo(px-size,py+size);ctx.lineTo(px+size,py-size);
+    ctx.strokeStyle='#ffffff';ctx.lineWidth=8;ctx.stroke();
+    ctx.strokeStyle='#ef4444';ctx.lineWidth=4;ctx.stroke();
+    ctx.lineCap='butt';
+   }
    status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
     aligned.aligned.length+' aligned · reference car #'+referenceId+
     ' · '+(useLearned?'learned '+selected.length+' clean laps ('+typical.toFixed(1)+'s)':'leader GPS fallback')+
