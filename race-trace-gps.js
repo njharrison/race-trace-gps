@@ -437,7 +437,6 @@ class RaceTraceGPS extends HTMLElement {
    };
    const expected=quantile(validStops,.25);
    const pitDriverSelect=this.shadowRoot.querySelector('#pitdriver');
-   const oldDriver=this.pitDriver;
    pitDriverSelect.replaceChildren();
    for(const id of series.keys()){
     const opt=document.createElement('option');
@@ -449,7 +448,7 @@ class RaceTraceGPS extends HTMLElement {
    const pitInput=this.shadowRoot.querySelector('#pitloss');
    const pitReset=this.shadowRoot.querySelector('#pitreset');
    const effectiveLoss=this.pitManual===null?expected:this.pitManual;
-   if(document.activeElement!==pitInput)pitInput.value=Number.isFinite(effectiveLoss)?effectiveLoss.toFixed(1):'';
+   if(this.shadowRoot.activeElement!==pitInput)pitInput.value=Number.isFinite(effectiveLoss)?effectiveLoss.toFixed(1):'';
    pitInput.onchange=()=>{
     const v=Number(pitInput.value);
     if(pitInput.value!==''&&Number.isFinite(v)&&v>=0&&v<=180){
