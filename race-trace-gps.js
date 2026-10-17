@@ -229,22 +229,75 @@ class RaceTraceGPS extends HTMLElement {
     last.set(id,{phase,value:unwrapped});
    }
    const aligned=RaceTraceOfficialAlignment.align(traces,events);
-   const all=[...traces.values()].flat(),minT=Math.min(...all.map(p=>p[2])),maxT=Math.max(...all.map(p=>p[2]));
-   const minX=Math.min(...all.map(p=>p[1])),maxX=Math.max(...all.map(p=>p[1]));
+   // A final stationary spell of 5s or longer ends a driver's trace at
+   // the last moving sample. Earlier stops are retained if the car resumes.
+   let stopped=0;
+   for(const [id,track] of traces){
+    if(track.length<3)continue;
+    let k=track.length-1;
+    while(k>0&&Math.abs(track[k][1]-track[k-1][1])<0.00025)k--;
+    if(k<track.length-1&&track.at(-1)[2]-track[k][2]>=5){
+     traces.set(id,track.slice(0,k+1));stopped++;
+    }
+   }
+   // Reference: the car furthest along the race at the end of the recording.
+   // Compare crossing times at identical race distances, never at identical
+   // timestamps. No extrapolation beyond the reference car's observations.
+   const eligible=[...traces].filter(([,v])=>v.length>2);
+   if(!eligible.length)throw Error('No usable driver trajectories');
+   eligible.sort((a,b)=>b[1].at(-1)[1]-a[1].at(-1)[1]);
+   const [referenceId,reference]=eligible[0];
+   const ref=reference.filter((p,i)=>!i||p[1]>reference[i-1][1]+1e-7);
+   function timeAtDistance(d){
+    if(d<ref[0][1]||d>ref.at(-1)[1])return null;
+    let lo=0,hi=ref.length-1;
+    while(hi-lo>1){const mid=(lo+hi)>>1;if(ref[mid][1]<d)lo=mid;else hi=mid;}
+    const u=ref[hi][1]-ref[lo][1];
+    return u>0?ref[lo][2]+(d-ref[lo][1])/u*(ref[hi][2]-ref[lo][2]):null;
+   }
+   const series=new Map();
+   for(const [id,track] of traces){
+    const pts=[];
+    for(const p of track){
+     const t=timeAtDistance(p[1]);
+     if(t!==null&&Number.isFinite(t))pts.push([p[1],p[2]-t]);
+    }
+    if(pts.length>1)series.set(id,pts);
+   }
+   const all=[...series.values()].flat();
+   if(!all.length)throw Error('No overlapping race distances for gap calculation');
+   const minX=Math.min(...all.map(p=>p[0])),maxX=Math.max(...all.map(p=>p[0]));
+   const gapValues=all.map(p=>p[1]).sort((a,b)=>a-b);
+   // Clip extremes so an anomalous projection cannot flatten the entire plot.
+   let minGap=Math.min(-2,gapValues[Math.floor(gapValues.length*.01)]-2);
+   let maxGap=Math.max(2,gapValues[Math.floor(gapValues.length*.99)]+2);
+   if(maxGap-minGap<5){minGap-=2;maxGap+=2;}
    const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;
    ctx.clearRect(0,0,w,h);ctx.fillStyle='#0b1220';ctx.fillRect(0,0,w,h);
-   const x=v=>45+(v-minX)/Math.max(.001,maxX-minX)*(w-65);
-   const y=t=>h-30-(t-minT)/Math.max(1,maxT-minT)*(h-55);
-   ctx.strokeStyle='#334155';ctx.lineWidth=1;
-   for(let lap=Math.ceil(minX);lap<=maxX;lap++){ctx.beginPath();ctx.moveTo(x(lap),15);ctx.lineTo(x(lap),h-30);ctx.stroke();ctx.fillStyle='#aab';ctx.fillText('Lap '+lap,x(lap)+3,h-12);}
+   const x=v=>52+(v-minX)/Math.max(.001,maxX-minX)*(w-76);
+   const y=v=>20+(v-minGap)/(maxGap-minGap)*(h-60);
+   ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.font='12px system-ui';
+   for(let lap=Math.ceil(minX);lap<=maxX;lap++){
+    ctx.beginPath();ctx.moveTo(x(lap),15);ctx.lineTo(x(lap),h-32);ctx.stroke();
+    ctx.fillStyle='#aab';ctx.fillText('Lap '+lap,x(lap)+3,h-12);
+   }
+   const gapStep=Math.max(1,Math.ceil((maxGap-minGap)/8));
+   for(let g=Math.ceil(minGap/gapStep)*gapStep;g<=maxGap;g+=gapStep){
+    ctx.beginPath();ctx.moveTo(50,y(g));ctx.lineTo(w-18,y(g));ctx.stroke();
+    ctx.fillStyle='#aab';ctx.fillText(g+'s',4,y(g)+4);
+   }
    const colors=['#fb7185','#38bdf8','#a3e635','#fbbf24','#c084fc','#2dd4bf','#f472b6','#93c5fd'];
-   let i=0;
-   for(const [id,trace] of traces){
-    ctx.strokeStyle=colors[i++%colors.length];ctx.lineWidth=1.5;ctx.beginPath();
-    trace.forEach((p,j)=>j?ctx.lineTo(x(p[1]),y(p[2])):ctx.moveTo(x(p[1]),y(p[2])));
+   let i=0;ctx.save();ctx.beginPath();ctx.rect(52,15,w-70,h-47);ctx.clip();
+   for(const [id,points] of series){
+    ctx.strokeStyle=id===referenceId?'#fff':colors[i%colors.length];
+    i++;ctx.lineWidth=id===referenceId?2.5:1.5;ctx.beginPath();
+    points.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1])):ctx.moveTo(x(p[0]),y(p[1])));
     ctx.stroke();
    }
-   status.textContent=traces.size+' drivers · '+events.length+' official crossings · '+aligned.aligned.length+' aligned · '+(direction===1?'forward':'reverse')+' direction'+(this.error?' · '+this.error:'');
+   ctx.restore();
+   status.textContent=series.size+' drivers · '+events.length+' official crossings · '+
+    aligned.aligned.length+' aligned · reference car #'+referenceId+
+    ' (white) · '+stopped+' stationary traces terminated · gap at equal distance';
   }catch(e){status.textContent='Experimental diagnostics: '+e.message;}
  }
 }
