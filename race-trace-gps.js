@@ -1405,9 +1405,9 @@ class RaceTraceGPS extends HTMLElement {
    for(let lap=Math.ceil(view.xMin);lap<=view.xMax;lap++){
     ctx.beginPath();ctx.moveTo(x(lap),15);ctx.lineTo(x(lap),h-32);ctx.stroke();
     ctx.fillStyle='#aab';
-    // Aligned GPS distance zero is the START of racing lap 1.
-    // The formation lap is outside the plotted race distance.
-    const axisLabel=String(lap+1);
+    // Aligned racing distance 1 is the start of lap 1.
+    // Keep axis labels consistent with Reset view and Live X bounds.
+    const axisLabel=String(lap);
     ctx.fillText(axisLabel,x(lap)+3,h-12);
    }
    const gapStep=Math.max(1,Math.ceil((view.yMax-view.yMin)/8));
