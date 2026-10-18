@@ -166,7 +166,7 @@ class RaceTraceGPS extends HTMLElement {
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
-   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',timing_delta_url:null,gps_delta_url:null,height:460,...config};
+   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',timing_delta_url:null,gps_delta_url:null,formation_lap:false,height:460,...config};
   this.draw();
  }
  set hass(hass){this._hass=hass;}
@@ -591,7 +591,12 @@ class RaceTraceGPS extends HTMLElement {
    // Each sample's fractional lap position is associated with elapsed time
    // from its preceding lap boundary. Median across laps at 1% bins, then
    // enforce monotonicity. This avoids importing Singapore-specific profiles.
-   const eligible=[...traces].filter(([,v])=>v.length>2);
+   // Explicitly opt in for events where the first recorded lap is a
+   // formation lap. Keep all GPS data for calibration and diagnostics.
+   // Only the race-phase trajectories enter learning and the main chart.
+   const raceStartDistance=this.config.formation_lap?2:1;
+   const eligible=[...traces].map(([id,v])=>[id,
+    v.filter(p=>p[1]>=raceStartDistance)]).filter(([,v])=>v.length>2);
    if(!eligible.length)throw Error('No usable driver trajectories');
    eligible.sort((a,b)=>b[1].at(-1)[1]-a[1].at(-1)[1]);
    const [referenceId,reference]=eligible[0];
@@ -793,8 +798,8 @@ class RaceTraceGPS extends HTMLElement {
     (orderingChecks.length?' (e.g. L'+orderingChecks[0].lap+' #'+orderingChecks[0].a+
      '/#'+orderingChecks[0].b+')':'');
    const useLearned=this.referenceMode==='learned'&&!!learned;
-   const firstCross=events.filter(e=>String(e[0])===referenceId&&e[1]===2)[0];
-   const originTime=firstCross?.[2]??crossingAt(ref,1);
+   const firstCross=events.find(e=>String(e[0])===referenceId&&e[1]===raceStartDistance+1);
+   const originTime=firstCross?.[2]??crossingAt(ref,raceStartDistance);
    // Normalised lap-time shape is shared by all drivers. Anchor it to
    // the reference car at its first racing lap crossing.
    const referenceAdjustment=this.referenceLapAdjustment;
@@ -903,7 +908,7 @@ class RaceTraceGPS extends HTMLElement {
    // must remain visible as a time loss, not redefine the reference.
    const neutralSegments=[];
    let cumulative=0;
-   const candidateTracks=[...traces].filter(([,track])=>track.length>2).map(([id,track])=>({
+   const candidateTracks=[...eligible].map(([id,track])=>({
     id,track:track.filter((p,i)=>!i||p[1]>track[i-1][1]+1e-7)
    }));
    const neutralPaceStep=(from,to)=>{
@@ -964,7 +969,7 @@ class RaceTraceGPS extends HTMLElement {
     const source=this.applyTimingCorrections?correctedTraces.get(id)||track:track;
     const segments=[];let segment=[],prev=null;
     for(const p of source){
-     if(p[1]<1)continue;
+     if(p[1]<raceStartDistance)continue;
      if(prev&&(p[2]-prev[2]>8||p[2]<=prev[2]||Math.abs(p[1]-prev[1])>.16)){
       if(segment.length)segments.push(segment);
       segment=[];
@@ -1011,7 +1016,7 @@ class RaceTraceGPS extends HTMLElement {
    }
    for(const [id,track] of traces){
     const completed=[];
-    for(let lap=Math.max(1,Math.ceil(track[0][1]));lap<track.at(-1)[1];lap++){
+    for(let lap=Math.max(raceStartDistance,Math.ceil(track[0][1]));lap<track.at(-1)[1];lap++){
      const t0=crossingAt(track,lap),t1=crossingAt(track,lap+1);
      if(Number.isFinite(t0)&&Number.isFinite(t1)&&t1>t0)
       completed.push({lap,t0,t1,duration:t1-t0});
