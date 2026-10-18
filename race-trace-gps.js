@@ -594,7 +594,46 @@ class RaceTraceGPS extends HTMLElement {
    // Explicitly opt in for events where the first recorded lap is a
    // formation lap. Keep all GPS data for calibration and diagnostics.
    // Only the race-phase trajectories enter learning and the main chart.
-   const raceStartDistance=this.config.formation_lap?2:1;
+   // Prefer a recorded, explicit official race-start announcement.
+   // GREEN alone is not a race start (it also ends SC/VSC periods).
+   // Retain manual formation_lap override for feeds without such events.
+   const startMessages=[];
+   const collectStart=(item,fallback)=>{
+    if(!item)return;
+    const message=typeof item==='string'?item:
+     String(item.message??item.text??item.description??'');
+    if(!/\\b(?:LIGHTS? OUT|RACE START(?:ED)?|START OF (?:THE )?RACE)\\b/i.test(message)||
+       /RESTART|FORMATION|ABORT/i.test(message))return;
+    const raw=typeof item==='object'?(item.timestamp??item.time??item.date??fallback):fallback;
+    const t=typeof raw==='number'?raw:Number(raw);
+    if(Number.isFinite(t))startMessages.push(t);
+   };
+   for(const event of this.timing.race_control||[])collectStart(event,null);
+   for(const sample of this.timing.samples){
+    for(const field of [sample.race_control_messages,sample.race_control,
+      sample.messages,sample.race_control_message,sample.message]){
+     if(Array.isArray(field))for(const item of field)collectStart(item,sample.timestamp);
+     else collectStart(field,sample.timestamp);
+    }
+   }
+   const officialStart=startMessages.length?Math.min(...startMessages):null;
+   let raceStartDistance=this.config.formation_lap?2:1;
+   if(Number.isFinite(officialStart)){
+    // A completed formation lap puts the leader at approximately distance 2
+    // at lights out. Use GPS distance at the actual start to distinguish
+    // it from races recorded directly from lap one.
+    const startTrack=[...traces.values()].sort((a,b)=>
+     (b.at(-1)?.[1]??0)-(a.at(-1)?.[1]??0))[0];
+    if(startTrack?.length){
+     let nearest=null;
+     for(const p of startTrack){
+      if(!nearest||Math.abs(p[2]-officialStart)<Math.abs(nearest[2]-officialStart))
+       nearest=p;
+     }
+     if(nearest&&Math.abs(nearest[2]-officialStart)<30)
+      raceStartDistance=Math.max(1,Math.round(nearest[1]));
+    }
+   }
    const eligible=[...traces].map(([id,v])=>[id,
     v.filter(p=>p[1]>=raceStartDistance)]).filter(([,v])=>v.length>2);
    if(!eligible.length)throw Error('No usable driver trajectories');
