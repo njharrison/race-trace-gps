@@ -497,7 +497,7 @@ class RaceTraceGPS extends HTMLElement {
    // Exclude the formation lap and stationary grid wait BEFORE unwrapping,
    // calibration, lap alignment or pace learning.
    const raceStarts=(this.timing.race_control||[])
-    .filter(e=>/\\b(?:RACE START(?:ED)?|LIGHTS? OUT|START OF (?:THE )?RACE)\\b/i.test(String(e.message||''))&&
+    .filter(e=>/\b(?:RACE START(?:ED)?|LIGHTS? OUT|START OF (?:THE )?RACE)\b/i.test(String(e.message||''))&&
       !/RESTART|FORMATION|ABORT/i.test(String(e.message||'')))
     .map(e=>Date.parse(e.utc||'')/1000).filter(Number.isFinite);
    const raceStartTime=raceStarts.length?Math.min(...raceStarts):null;
