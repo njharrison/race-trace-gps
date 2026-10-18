@@ -171,7 +171,7 @@ class RaceTraceGPS extends HTMLElement {
  }
  set hass(hass){this._hass=hass;}
  connectedCallback(){this.refresh();this.timer=setInterval(()=>this.refresh(),5000);}
- disconnectedCallback(){clearInterval(this.timer);this.timer=null;}
+ disconnectedCallback(){clearInterval(this.timer);this.timer=null;this.resizeObserver?.disconnect();this.resizeObserver=null;}
  getCardSize(){return 9;}
  static getStubConfig(){return {};}
  async refresh(){
@@ -245,9 +245,29 @@ class RaceTraceGPS extends HTMLElement {
  draw(){
   if(!this.shadowRoot||!this.config)return;
   if(!this.shadowRoot.querySelector('canvas')){
-   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:auto;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button,.controls input{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.pit{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;font:12px system-ui}.pit input{width:75px}.smooth input{width:125px;vertical-align:middle}.smooth{font:12px system-ui}.pitlog{font:12px system-ui;margin:5px 0;color:var(--secondary-text-color,#aab)}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer} .legend button.off{opacity:.35}.trace-tooltip{position:absolute;pointer-events:none;z-index:5;display:none;background:#101827f2;color:#f8fafc;border:1px solid #64748b;border-radius:7px;padding:8px 10px;font:12px system-ui;box-shadow:0 4px 16px #0008;white-space:nowrap}.trace-tooltip strong{display:block;font-size:13px;margin-bottom:4px}.trace-container{position:relative}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="resetview">Reset view</button><label><input type="checkbox" id="timingcorrections"> Timing anchors</label><label><input type="checkbox" id="driverprofiles" checked> Driver profiles (experimental)</label><span id="refshift"></span><label class="smooth">Smoothing <input id="smoothing" type="range" min="0" max="10" step="1" value="5"> <span id="smoothingvalue">5s</span></label></div><div class="pit"><label><input type="checkbox" id="pitshow" checked> Pit projections</label><label>Driver <select id="pitdriver"></select></label><label>Pit loss <input id="pitloss" type="number" min="0" max="180" step="0.1" placeholder="—"> s</label><button id="pitreset" disabled>Calculating…</button><label>VSC pit loss <input id="vscpitloss" type="number" min="0" max="180" step="0.1" value="15"> s</label><button id="vscpitreset">Use estimate 15s</button></div><div class="pitlog" id="pitlog"></div><div class="trace-container"><canvas width="1100" height="460"></canvas><div class="trace-tooltip" id="trace-tooltip"></div></div><div class="legend" id="legend"></div></ha-card>';
+   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:460px;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button,.controls input{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.pit{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;font:12px system-ui}.pit input{width:75px}.smooth input{width:125px;vertical-align:middle}.smooth{font:12px system-ui}.pitlog{font:12px system-ui;margin:5px 0;color:var(--secondary-text-color,#aab)}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer} .legend button.off{opacity:.35}.trace-tooltip{position:absolute;pointer-events:none;z-index:5;display:none;background:#101827f2;color:#f8fafc;border:1px solid #64748b;border-radius:7px;padding:8px 10px;font:12px system-ui;box-shadow:0 4px 16px #0008;white-space:nowrap}.trace-tooltip strong{display:block;font-size:13px;margin-bottom:4px}.trace-container{position:relative}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="resetview">Reset view</button><label><input type="checkbox" id="timingcorrections"> Timing anchors</label><label><input type="checkbox" id="driverprofiles" checked> Driver profiles (experimental)</label><span id="refshift"></span><label class="smooth">Smoothing <input id="smoothing" type="range" min="0" max="10" step="1" value="5"> <span id="smoothingvalue">5s</span></label></div><div class="pit"><label><input type="checkbox" id="pitshow" checked> Pit projections</label><label>Driver <select id="pitdriver"></select></label><label>Pit loss <input id="pitloss" type="number" min="0" max="180" step="0.1" placeholder="—"> s</label><button id="pitreset" disabled>Calculating…</button><label>VSC pit loss <input id="vscpitloss" type="number" min="0" max="180" step="0.1" value="15"> s</label><button id="vscpitreset">Use estimate 15s</button></div><div class="pitlog" id="pitlog"></div><div class="trace-container"><canvas></canvas><div class="trace-tooltip" id="trace-tooltip"></div></div><div class="legend" id="legend"></div></ha-card>';
   }
   const status=this.shadowRoot.querySelector('#status'),canvas=this.shadowRoot.querySelector('canvas');
+  canvas.style.height=Math.max(180,Number(this.config.height)||460)+'px';
+  if(!this.resizeObserver&&typeof ResizeObserver!=='undefined'){
+   this.resizeObserver=new ResizeObserver(()=>{
+    if(this.drag)return;
+    const rect=canvas.getBoundingClientRect();
+    if(rect.width>0&&rect.height>0)this.draw();
+   });
+   this.resizeObserver.observe(canvas);
+  }
+  const rect=canvas.getBoundingClientRect();
+  const dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1));
+  const cssWidth=Math.max(1,Math.round(rect.width||1100));
+  const cssHeight=Math.max(1,Math.round(rect.height||460));
+  const pixelWidth=Math.round(cssWidth*dpr),pixelHeight=Math.round(cssHeight*dpr);
+  if(canvas.width!==pixelWidth||canvas.height!==pixelHeight){
+   canvas.width=pixelWidth;canvas.height=pixelHeight;
+  }
+  this.canvasScale=dpr;
+  this.canvasWidth=cssWidth;this.canvasHeight=cssHeight;
+
   const refSelect=this.shadowRoot.querySelector('#reference');
   refSelect.value=this.referenceMode;
   const timingToggle=this.shadowRoot.querySelector('#timingcorrections');
@@ -287,9 +307,9 @@ class RaceTraceGPS extends HTMLElement {
     const tooltip=this.shadowRoot.querySelector('#trace-tooltip');
     if(!tooltip||!this.hoverSeries||!this.viewport){if(tooltip)tooltip.style.display='none';return;}
     const rect=canvas.getBoundingClientRect();
-    const mx=(e.clientX-rect.left)*canvas.width/rect.width;
-    const my=(e.clientY-rect.top)*canvas.height/rect.height;
-    const v=this.viewport,w=canvas.width,h=canvas.height;
+    const mx=(e.clientX-rect.left)*this.canvasWidth/rect.width;
+    const my=(e.clientY-rect.top)*this.canvasHeight/rect.height;
+    const v=this.viewport,w=this.canvasWidth,h=this.canvasHeight;
     const x=d=>52+(d-v.xMin)/Math.max(.001,v.xMax-v.xMin)*(w-76);
     const y=d=>20+(v.yMax-d)/(v.yMax-v.yMin)*(h-60);
     let closest=null;
@@ -361,13 +381,14 @@ class RaceTraceGPS extends HTMLElement {
    if(drag.pointer!==e.pointerId||!this.viewport)return;
    drag.dx=e.clientX-drag.x;drag.dy=e.clientY-drag.y;
    const rect=canvas.getBoundingClientRect();
-   const sx=canvas.width/rect.width,sy=canvas.height/rect.height;
+   const sx=this.canvasWidth/rect.width,sy=this.canvasHeight/rect.height;
    const ctx=canvas.getContext('2d');
-   ctx.fillStyle='#0b1220';ctx.fillRect(0,0,canvas.width,canvas.height);
-   ctx.save();ctx.beginPath();ctx.rect(52,15,canvas.width-70,canvas.height-47);ctx.clip();
+   ctx.setTransform(this.canvasScale,0,0,this.canvasScale,0,0);
+   ctx.fillStyle='#0b1220';ctx.fillRect(0,0,this.canvasWidth,this.canvasHeight);
+   ctx.save();ctx.beginPath();ctx.rect(52,15,this.canvasWidth-70,this.canvasHeight-47);ctx.clip();
    const offsetX=drag.zone==='both'?drag.dx*sx:0;
    const offsetY=drag.zone==='reference'?0:drag.dy*sy;
-   ctx.drawImage(drag.snapshot,offsetX,offsetY);
+   ctx.drawImage(drag.snapshot,offsetX,offsetY,this.canvasWidth,this.canvasHeight);
    ctx.restore();
    if(drag.zone==='reference'){
     const adjustment=drag.reference-Math.round(drag.dy/10)/10;
@@ -1320,7 +1341,8 @@ class RaceTraceGPS extends HTMLElement {
    // Keep manual panning available; reference-lap dragging resets Y.
    const halfRange=Math.max(5,referenceSeconds/2+5);
    const minGap=-halfRange,maxGap=halfRange;
-   const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;
+   const ctx=canvas.getContext('2d'),w=this.canvasWidth,h=this.canvasHeight;
+   ctx.setTransform(this.canvasScale,0,0,this.canvasScale,0,0);
    ctx.clearRect(0,0,w,h);ctx.fillStyle='#0b1220';ctx.fillRect(0,0,w,h);
    if(!this.viewport)this.viewport={xMin:minX,xMax:maxX,yMin:minGap,yMax:maxGap};
    const view=this.viewport;
