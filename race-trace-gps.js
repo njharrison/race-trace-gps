@@ -491,8 +491,21 @@ class RaceTraceGPS extends HTMLElement {
    this.lapProfileCache.clear();
    const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
    const geometry=RaceTraceCircuit.prepare(points);
-   const frames=RaceTraceRecordingSync.gpsFrames(this.gps,sourceClock);
-   const events=RaceTraceRecordingSync.crossings(this.timing).filter(e=>e[1]>=2);
+   const allFrames=RaceTraceRecordingSync.gpsFrames(this.gps,sourceClock);
+   // The official FIA RACE START message has an event UTC timestamp.
+   // Use the F1 session clock, never HA observed_at / wall-clock time.
+   // Exclude the formation lap and stationary grid wait BEFORE unwrapping,
+   // calibration, lap alignment or pace learning.
+   const raceStarts=(this.timing.race_control||[])
+    .filter(e=>/\\b(?:RACE START(?:ED)?|LIGHTS? OUT|START OF (?:THE )?RACE)\\b/i.test(String(e.message||''))&&
+      !/RESTART|FORMATION|ABORT/i.test(String(e.message||'')))
+    .map(e=>Date.parse(e.utc||'')/1000).filter(Number.isFinite);
+   const raceStartTime=raceStarts.length?Math.min(...raceStarts):null;
+   const frames=Number.isFinite(raceStartTime)?
+    allFrames.filter(f=>f.t>=raceStartTime):allFrames;
+   if(!frames.length)throw Error('Waiting for GPS positions after official race start');
+   const events=RaceTraceRecordingSync.crossings(this.timing).filter(e=>e[1]>=2&&
+     (!Number.isFinite(raceStartTime)||e[2]>=raceStartTime));
    let calibration=null,provisional=true;
    if(events.length){
     try{const official=RaceTraceCalibration.calibrate(geometry,frames,events);
