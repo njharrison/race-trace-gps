@@ -571,6 +571,7 @@ class RaceTraceGPS extends HTMLElement {
    const retirementAt=new Map();
    const retiredStatus=value=>/^(RETIRED|RET|DNF|OUT)$/i.test(String(value??'').trim());
    for(const sample of this.timing.samples){
+    const sampleClock=Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp;
     for(const d of sample.drivers||[]){
      const id=String(d.id??d.racing_number??'');
      if(!id||retirementAt.has(id))continue;
@@ -591,12 +592,12 @@ class RaceTraceGPS extends HTMLElement {
      if(!id||finishAt.has(id)||retirementAt.has(id))continue;
      if(d.finished===true||d.is_finished===true||
         [d.status,d.driver_status,d.race_status].some(finishStatus))
-      finishAt.set(id,{time:sample.timestamp,source:'status'});
+      finishAt.set(id,{time:sampleClock,source:'status'});
     }
    }
    const flagTimes=[];
    const isFlagMessage=v=>/CHE(?:QU|CK)ERED FLAG|CHE(?:QU|CK)ERED|RACE FINISHED|END OF RACE/i.test(String(v??''));
-   for(const e of this.timing.race_control||[]){
+   for(const e of (sourceClock?[]:this.timing.race_control||[])){
     if(isFlagMessage(e.message??e.text??e.description??'')||
        /CHE(?:QU|CK)ERED/i.test(String(e.flag??e.flag_type??''))){
      const t=Number(e.observed_at??e.timestamp??e.time??(e.utc?Date.parse(e.utc)/1000:NaN));
@@ -604,6 +605,7 @@ class RaceTraceGPS extends HTMLElement {
     }
    }
    for(const sample of this.timing.samples){
+    const sampleClock=Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp;
     const text=[sample.race_control_message,sample.message,
      ...(Array.isArray(sample.race_control_messages)?sample.race_control_messages.map(e=>
       typeof e==='string'?e:e.message??e.text??''):[])].join(' ');
@@ -760,8 +762,9 @@ class RaceTraceGPS extends HTMLElement {
     const t=typeof raw==='number'?raw:Number(raw);
     if(Number.isFinite(t))startMessages.push(t);
    };
-   for(const event of this.timing.race_control||[])collectStart(event,null);
+   for(const event of (sourceClock?[]:this.timing.race_control||[]))collectStart(event,null);
    for(const sample of this.timing.samples){
+    const sampleClock=Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp;
     for(const field of [sample.race_control_messages,sample.race_control,
       sample.messages,sample.race_control_message,sample.message]){
      if(Array.isArray(field))for(const item of field)collectStart(item,sampleClock);
