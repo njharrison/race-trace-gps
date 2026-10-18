@@ -238,6 +238,16 @@ class RaceTraceGPS extends HTMLElement {
     return loadJson(this.config.timing_url);
    };
    const [gps,timing]=await Promise.all([loadGps(),loadTiming()]);
+   // A paused replay is a frozen picture, not another timing sample.
+   // Keep the last fully rendered frame unchanged while the GPS stream
+   // reports paused. In particular, don't recompute learned reference
+   // pace, official alignment or smoothing from late timing updates.
+   // The next playing/seeking snapshot resumes normal processing.
+   if(this.gps&&gps.samples?.at(-1)?.replay_state==='paused'&&
+      this.gps.run===gps.run&&
+      this.gps.geometry?.circuit_key===gps.geometry?.circuit_key){
+    return;
+   }
    if(gps.schema_version!==1||timing.schema_version!==1)throw Error('Expected recording schema_version 1');
    if(!Array.isArray(gps.geometry?.points)||!Array.isArray(gps.samples)||!Array.isArray(timing.samples))
     throw Error('Missing GPS geometry or samples');
