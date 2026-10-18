@@ -245,14 +245,19 @@ class RaceTraceGPS extends HTMLElement {
     let closest=null;
     for(const [id,points] of this.hoverSeries.series){
      if(this.hiddenDrivers.has(id))continue;
-     for(let j=1;j<points.length;j++){
-      const a=points[j-1],b=points[j],ax=x(a[0]),ay=y(a[1]),bx=x(b[0]),by=y(b[1]);
+     for(const lapped of [false,true]){
+      if(lapped&&!Number.isFinite(this.hoverSeries.lapSeconds))continue;
+      for(let j=1;j<points.length;j++){
+       const a=points[j-1],b=points[j];
+       const ax=x(a[0]+(lapped?1:0)),ay=y(a[1]+(lapped?this.hoverSeries.lapSeconds:0));
+       const bx=x(b[0]+(lapped?1:0)),by=y(b[1]+(lapped?this.hoverSeries.lapSeconds:0));
       if(Math.max(ax,bx)<mx-12||Math.min(ax,bx)>mx+12)continue;
       const dx=bx-ax,dy=by-ay,len=dx*dx+dy*dy;
       const t=len?Math.max(0,Math.min(1,((mx-ax)*dx+(my-ay)*dy)/len)):0;
       const px=ax+t*dx,py=ay+t*dy,dist=Math.hypot(mx-px,my-py);
       if(dist<12&&(!closest||dist<closest.dist))
-       closest={id,dist,d:a[0]+t*(b[0]-a[0])};
+       closest={id,dist,d:a[0]+t*(b[0]-a[0]),lapped};
+      }
      }
     }
     if(!closest){tooltip.style.display='none';return;}
@@ -265,9 +270,9 @@ class RaceTraceGPS extends HTMLElement {
      Number(meta.completed_laps):Math.max(1,Math.floor(closest.d)+1);
     tooltip.replaceChildren();
     const heading=document.createElement('strong');
-    heading.textContent=label+' #'+closest.id;
+    heading.textContent=label+' #'+closest.id+(closest.lapped?' · LAPPED PROJECTION':'');
     const detail=document.createElement('div');
-    detail.textContent='Position: '+pos+' · Lap: '+lap;
+    detail.textContent='Position: '+pos+' · Lap: '+lap+(closest.lapped?' · +1 lap overlay':'');
     const detail2=document.createElement('div');
     detail2.textContent='Tyre: '+tyre+' · Team: '+team;
     tooltip.append(heading,detail,detail2);
@@ -977,6 +982,9 @@ class RaceTraceGPS extends HTMLElement {
    }
    lapDurations.sort((a,b)=>a-b);
    const lapSeconds=useLearned?typical:(lapDurations[Math.floor(lapDurations.length/2)]||100);
+   // Dashed lapped-car overlays use the same geometry as the solid lines,
+   // shifted by +1 lap and +1 reference lap time.
+   if(this.hoverSeries)this.hoverSeries.lapSeconds=lapSeconds;
    ctx.save();ctx.beginPath();ctx.rect(52,15,w-70,h-47);ctx.clip();
    // A time interval maps to diagonal boundaries in gap/distance space.
    for(const p of periods){
