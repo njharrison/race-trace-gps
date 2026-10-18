@@ -602,6 +602,18 @@ class RaceTraceGPS extends HTMLElement {
     traces.set(id,track);
    }
    const aligned=RaceTraceOfficialAlignment.align(traces,events);
+   // Race-start samples are at the grid immediately before the timing line.
+   // Official crossings can carry an arbitrary whole-lap offset from the
+   // formation lap. Strip ONLY that integer offset, per driver, preserving
+   // each car's fractional grid position and all subsequent GPS movement.
+   // Do not change timestamps or interpolate across the start trigger.
+   if(Number.isFinite(raceStartTime)){
+    for(const track of traces.values()){
+     if(!track.length)continue;
+     const integerOffset=Math.round(track[0][1]);
+     if(integerOffset)for(const point of track)point[1]-=integerOffset;
+    }
+   }
    // A stationary car remains visible for up to five seconds. If it is
    // officially retired, replace the stationary tail with an X at the last
    // moving point. Use actual GPS movement (metres), not centreline phase:
