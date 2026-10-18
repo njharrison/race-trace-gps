@@ -162,11 +162,11 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceOffi
 class RaceTraceGPS extends HTMLElement {
  constructor(){
   super();this.attachShadow({mode:'open'});this.gps=null;this.timing=null;
-  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.vscPitManual=null;this.pitEnabled=true;this.smoothingSeconds=5;this.viewport=null;this.referenceLapAdjustment=0;this.drag=null;this.applyTimingCorrections=false;this.useDriverProfiles=true;this.hoverPoint=null;this.hoverSeries=null;
+  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.vscPitManual=null;this.pitEnabled=true;this.smoothingSeconds=5;this.viewport=null;this.referenceLapAdjustment=0;this.drag=null;this.applyTimingCorrections=false;this.useDriverProfiles=true;this.hoverPoint=null;this.hoverSeries=null;this.gpsProjectionCache=new Map();
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
-   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',height:460,...config};
+   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',timing_delta_url:null,height:460,...config};
   this.draw();
  }
  set hass(hass){this._hass=hass;}
@@ -178,15 +178,42 @@ class RaceTraceGPS extends HTMLElement {
   if(!this.config||this.busy)return;
   this.busy=true;
   try{
-   const [gps,timing]=await Promise.all([this.config.gps_url,this.config.timing_url]
-    .map(async url=>{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw Error(url+': HTTP '+r.status);return r.json();}));
+   const loadJson=async url=>{
+    const response=await fetch(url,{cache:'no-store'});
+    if(!response.ok)throw Error(url+': HTTP '+response.status);
+    return response.json();
+   };
+   const loadTiming=async()=>{
+    const previous=this.timing;
+    if(previous){
+     const deltaUrl=this.config.timing_delta_url||
+      this.config.timing_url.replace(/\\.json(?=\\?|$)/,'-delta.json');
+     if(deltaUrl!==this.config.timing_url)try{
+      const delta=await loadJson(deltaUrl);
+      const count=previous.samples.length,events=(previous.race_control||[]).length;
+      if(delta.schema_version===1&&delta.run===previous.run&&
+       Array.isArray(delta.samples)&&Array.isArray(delta.race_control)&&
+       delta.sample_start<=count&&delta.event_start<=events&&
+       delta.sample_count>=count&&delta.event_count>=events&&
+       delta.sample_start+delta.samples.length===delta.sample_count&&
+       delta.event_start+delta.race_control.length===delta.event_count){
+       if(delta.sample_count===count&&delta.event_count===events)return previous;
+       return {...previous,
+        samples:previous.samples.concat(delta.samples.slice(count-delta.sample_start)),
+        race_control:(previous.race_control||[]).concat(delta.race_control.slice(events-delta.event_start))};
+      }
+     }catch(_err){/* Fall back to full archive. */}
+    }
+    return loadJson(this.config.timing_url);
+   };
+   const [gps,timing]=await Promise.all([loadJson(this.config.gps_url),loadTiming()]);
    if(gps.schema_version!==1||timing.schema_version!==1)throw Error('Expected recording schema_version 1');
    if(!Array.isArray(gps.geometry?.points)||!Array.isArray(gps.samples)||!Array.isArray(timing.samples))
     throw Error('Missing GPS geometry or samples');
    if(this.gps&&(this.gps.geometry?.circuit_key!==gps.geometry?.circuit_key||
      this.gps.samples?.[0]?.recorded_at!==gps.samples?.[0]?.recorded_at)){
     this.processed=null;this.processedKey=null;this.lastRender=null;
-    this.viewport=null;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;
+    this.viewport=null;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;this.gpsProjectionCache.clear();
    }
    this.gps=gps;this.timing=timing;this.error='';this.draw();
   }catch(e){this.error=String(e);this.draw();}
@@ -399,8 +426,17 @@ class RaceTraceGPS extends HTMLElement {
       after=positions[Math.min(positions.length-1,i+1)];
      const tx=after.x-before.x,ty=after.y-before.y;
      const norm=Math.hypot(tx,ty);
+     // Geometry projection is expensive (scans every circuit segment).
+     // Cache stable points across 5-second polls. Include both neighbours
+     // because the perpendicular depends on the car's travel direction.
+     const cacheKey=id+':'+p.t+':'+p.x+':'+p.y+':'+before.x+':'+before.y+':'+after.x+':'+after.y;
+     let cached=this.gpsProjectionCache.get(cacheKey);
+     let distance,usedIntersection=false;
+     if(cached){
+      distance=cached.distance;usedIntersection=cached.usedIntersection;
+     }else{
      const nearest=RaceTraceCircuit.project(geometry,p.x,p.y);
-     let distance=nearest.distance,usedIntersection=false;
+     distance=nearest.distance;
      if(norm>1){
       const nx=-ty/norm,ny=tx/norm;
       let best=null;
@@ -420,6 +456,8 @@ class RaceTraceGPS extends HTMLElement {
         distance=best.distance;usedIntersection=true;
        }
       }
+     }
+     this.gpsProjectionCache.set(cacheKey,{distance,usedIntersection});
      }
      if(usedIntersection)projectionStats.intersection++;
      else projectionStats.fallback++;
