@@ -1388,15 +1388,15 @@ class RaceTraceGPS extends HTMLElement {
    // Initial/reset X covers the declared race distance, not just laps
    // received so far. The official first racing lap starts here.
    if(!this.viewport)this.viewport={
-    xMin:raceStartDistance,
-    xMax:raceStartDistance+raceLaps,
+    xMin:0,
+    xMax:raceLaps,
     yMin:minGap,yMax:maxGap
    };
    if(this.liveView&&this.viewport){
     // Follow the furthest recorded race position with one lap of look-ahead.
     // Only the X extent changes; preserve the current Y range.
-    this.viewport={...this.viewport,xMin:raceStartDistance,
-     xMax:Math.max(raceStartDistance+1,Math.min(raceStartDistance+raceLaps,maxX+1))};
+    this.viewport={...this.viewport,xMin:0,
+     xMax:Math.max(1,Math.min(raceLaps,maxX+1))};
    }
    const view=this.viewport;
    const x=v=>52+(v-view.xMin)/Math.max(.001,view.xMax-view.xMin)*(w-76);
@@ -1407,7 +1407,7 @@ class RaceTraceGPS extends HTMLElement {
     ctx.fillStyle='#aab';
     // Aligned racing distance 1 is the start of lap 1.
     // Keep axis labels consistent with Reset view and Live X bounds.
-    const axisLabel=String(lap);
+    const axisLabel=String(lap+1);
     ctx.fillText(axisLabel,x(lap)+3,h-12);
    }
    const gapStep=Math.max(1,Math.ceil((view.yMax-view.yMin)/8));
