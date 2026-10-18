@@ -1139,10 +1139,16 @@ class RaceTraceGPS extends HTMLElement {
     this.renderSeriesKey=this.processedKey;
    }
    const displaySeries=this.renderSeries;
-   const all=[...series.values()].flat();
-   if(!all.length)throw Error('No overlapping race distances for gap calculation');
-   const minX=Math.min(...all.map(p=>p[0])),maxX=Math.max(...all.map(p=>p[0]));
-   const gapValues=all.map(p=>p[1]).sort((a,b)=>a-b);
+   let minX=Infinity,maxX=-Infinity,pointCount=0;
+   const gapValues=[];
+   for(const points of series.values())for(const p of points){
+    minX=Math.min(minX,p[0]);
+    maxX=Math.max(maxX,p[0]);
+    gapValues.push(p[1]);
+    pointCount++;
+   }
+   if(!pointCount)throw Error('No overlapping race distances for gap calculation');
+   gapValues.sort((a,b)=>a-b);
    // Clip extremes so an anomalous projection cannot flatten the entire plot.
    let minGap=Math.min(-2,gapValues[Math.floor(gapValues.length*.01)]-2);
    let maxGap=Math.max(2,gapValues[Math.floor(gapValues.length*.99)]+2);
