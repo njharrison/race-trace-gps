@@ -1089,10 +1089,11 @@ class RaceTraceGPS extends HTMLElement {
    };
    for(const sample of this.timing.samples){
     const type=neutralType(sample.track_status);
-    if(type===undefined||!Number.isFinite(sample.timestamp))continue;
+    const t=sourceClock?sample.session_timestamp:sample.timestamp;
+    if(type===undefined||!Number.isFinite(t))continue;
     if(type!==neutral?.type){
-     if(neutral){neutral.end=sample.timestamp;neutralPeriods.push(neutral);}
-     neutral=type?{type,start:sample.timestamp,end:Infinity}:null;
+     if(neutral){neutral.end=t;neutralPeriods.push(neutral);}
+     neutral=type?{type,start:t,end:Infinity}:null;
     }
    }
    if(neutral)neutralPeriods.push(neutral);
@@ -1426,13 +1427,17 @@ class RaceTraceGPS extends HTMLElement {
    };
    for(const sample of this.timing.samples){
     const type=classifyStatus(sample.track_status);
-    if(type===undefined)continue;
+    const t=sourceClock?sample.session_timestamp:sample.timestamp;
+    if(type===undefined||!Number.isFinite(t))continue;
     if(type!==active?.type){
-     if(active){active.end=sample.timestamp;periods.push(active);}
-     active=type?{type,start:sample.timestamp}:null;
+     if(active){active.end=t;periods.push(active);}
+     active=type?{type,start:t}:null;
     }
    }
-   if(active){active.end=this.timing.samples.at(-1).timestamp;periods.push(active);}
+   if(active){
+    active.end=sourceClock?this.timing.samples.at(-1).session_timestamp:this.timing.samples.at(-1).timestamp;
+    periods.push(active);
+   }
    const refDistanceAtTime=t=>{
     if(t<ref[0][2]||t>ref.at(-1)[2])return null;
     let lo=0,hi=ref.length-1;
