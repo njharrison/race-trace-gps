@@ -162,11 +162,11 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceOffi
 class RaceTraceGPS extends HTMLElement {
  constructor(){
   super();this.attachShadow({mode:'open'});this.gps=null;this.timing=null;
-  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.vscPitManual=null;this.pitEnabled=true;this.smoothingSeconds=5;this.viewport=null;this.referenceLapAdjustment=0;this.drag=null;this.applyTimingCorrections=false;this.useDriverProfiles=true;this.hoverPoint=null;this.hoverSeries=null;this.gpsProjectionCache=new Map();
+  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.vscPitManual=null;this.pitEnabled=true;this.smoothingSeconds=5;this.viewport=null;this.referenceLapAdjustment=0;this.drag=null;this.applyTimingCorrections=false;this.useDriverProfiles=true;this.hoverPoint=null;this.hoverSeries=null;this.gpsProjectionCache=new Map();this.lapProfileCache=new Map();
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
-   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',timing_delta_url:null,height:460,...config};
+   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',timing_delta_url:null,gps_delta_url:null,height:460,...config};
   this.draw();
  }
  set hass(hass){this._hass=hass;}
@@ -182,6 +182,29 @@ class RaceTraceGPS extends HTMLElement {
     const response=await fetch(url,{cache:'no-store'});
     if(!response.ok)throw Error(url+': HTTP '+response.status);
     return response.json();
+   };
+   const loadGps=async()=>{
+    const previous=this.gps;
+    if(previous){
+     const deltaUrl=this.config.gps_delta_url||
+      this.config.gps_url.replace(/\.json(?=\?|$)/,'-delta.json');
+     if(deltaUrl!==this.config.gps_url)try{
+      const delta=await loadJson(deltaUrl);
+      const count=previous.samples.length;
+      const runMatches=delta.run===previous.run&&
+       delta.geometry?.circuit_key===previous.geometry?.circuit_key;
+      const firstMatches=delta.first_recorded_at===previous.samples[0]?.recorded_at;
+      if(delta.schema_version===1&&runMatches&&firstMatches&&
+       Array.isArray(delta.samples)&&
+       delta.sample_start<=count&&delta.sample_count>=count&&
+       delta.sample_start+delta.samples.length===delta.sample_count){
+       if(delta.sample_count===count)return previous;
+       return {...previous,samples:previous.samples.concat(
+        delta.samples.slice(count-delta.sample_start))};
+      }
+     }catch(_err){/* Missing, stale or invalid delta: full reload. */}
+    }
+    return loadJson(this.config.gps_url);
    };
    const loadTiming=async()=>{
     const previous=this.timing;
@@ -206,14 +229,14 @@ class RaceTraceGPS extends HTMLElement {
     }
     return loadJson(this.config.timing_url);
    };
-   const [gps,timing]=await Promise.all([loadJson(this.config.gps_url),loadTiming()]);
+   const [gps,timing]=await Promise.all([loadGps(),loadTiming()]);
    if(gps.schema_version!==1||timing.schema_version!==1)throw Error('Expected recording schema_version 1');
    if(!Array.isArray(gps.geometry?.points)||!Array.isArray(gps.samples)||!Array.isArray(timing.samples))
     throw Error('Missing GPS geometry or samples');
    if(this.gps&&(this.gps.geometry?.circuit_key!==gps.geometry?.circuit_key||
      this.gps.samples?.[0]?.recorded_at!==gps.samples?.[0]?.recorded_at)){
     this.processed=null;this.processedKey=null;this.lastRender=null;
-    this.viewport=null;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;this.gpsProjectionCache.clear();
+    this.viewport=null;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;this.gpsProjectionCache.clear();this.lapProfileCache.clear();
    }
    this.gps=gps;this.timing=timing;this.error='';this.draw();
   }catch(e){this.error=String(e);this.draw();}
@@ -581,22 +604,32 @@ class RaceTraceGPS extends HTMLElement {
     }
     return null;
    }
+   // Cache completed lap profiles. A lap is immutable after its following
+   // crossing is recorded; only new completed laps require 101 interpolations.
    const cleanLaps=[];
-   for(const [,track] of eligible){
+   const liveLapKeys=new Set();
+   for(const [id,track] of eligible){
     const monotone=track.filter((p,i)=>!i||p[1]>=track[i-1][1]-0.005);
     for(let lap=Math.max(1,Math.ceil(monotone[0][1]));lap<monotone.at(-1)[1];lap++){
-     const t0=crossingAt(monotone,lap),t1=crossingAt(monotone,lap+1);
-     if(t0===null||t1===null)continue;
-     const duration=t1-t0;
-     if(duration<75||duration>180)continue;
-     const bins=[];
-     for(let j=0;j<=100;j++){
-      const t=crossingAt(monotone,lap+j/100);
-      if(t===null)break;
-      bins.push((t-t0)/duration);
+     const cacheKey=id+':'+lap;
+     liveLapKeys.add(cacheKey);
+     let entry=this.lapProfileCache.get(cacheKey);
+     if(!entry){
+      const t0=crossingAt(monotone,lap),t1=crossingAt(monotone,lap+1);
+      if(t0===null||t1===null)continue;
+      const duration=t1-t0;
+      if(duration<75||duration>180)continue;
+      const bins=[];
+      for(let j=0;j<=100;j++){
+       const t=crossingAt(monotone,lap+j/100);
+       if(t===null)break;
+       bins.push((t-t0)/duration);
+      }
+      if(bins.length!==101||!bins.every((v,j)=>!j||v>=bins[j-1]-.0001))continue;
+      entry={duration,bins};
+      this.lapProfileCache.set(cacheKey,entry);
      }
-     if(bins.length===101&&bins.every((v,j)=>!j||v>=bins[j-1]-.0001))
-      cleanLaps.push({duration,bins});
+     cleanLaps.push(entry);
     }
    }
    const median=arr=>{const s=arr.slice().sort((a,b)=>a-b);return s[Math.floor(s.length/2)];};
@@ -654,6 +687,8 @@ class RaceTraceGPS extends HTMLElement {
     const first=Math.max(1,Math.ceil(track[0][1]));
     const end=Math.floor(track.at(-1)[1]);
     for(let lap=first;lap<end;lap++){
+     const cached=this.lapProfileCache.get(id+':'+lap);
+     if(cached){samples.push(cached);continue;}
      const t0=crossingAt(track,lap),t1=crossingAt(track,lap+1);
      if(!Number.isFinite(t0)||!Number.isFinite(t1))continue;
      const duration=t1-t0;
