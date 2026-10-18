@@ -123,17 +123,11 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceCali
  */
 (function(root){
 'use strict';
-function align(tracks,official,{windowSeconds=45,lockedShifts=null}={}){
+function align(tracks,official,{windowSeconds=45}={}){
  const diagnostics={aligned:[],missing:[],provisional:[]};
  // Anchor on multiple genuine lap crossings, not the initial lap counter.
  // GPS may already contain one or more formation/pre-race circuits.
  for(const [id,points] of tracks){
-  const fixed=lockedShifts?.get(String(id));
-  if(Number.isFinite(fixed)){
-   for(const point of points)point[1]+=fixed;
-   diagnostics.aligned.push({driver:String(id),shift:fixed,crossings:0,locked:true});
-   continue;
-  }
   const events=official.filter(e=>String(e[0])===String(id)&&e[1]>=2&&Number.isFinite(e[2]))
    .sort((a,b)=>a[2]-b[2]);
   const candidates=[];
@@ -158,7 +152,6 @@ function align(tracks,official,{windowSeconds=45,lockedShifts=null}={}){
   const consistent=candidates.filter(v=>Math.abs(v.shift-median)<.18);
   // A single crossing is provisional; several agreeing crossings validate it.
   const shift=consistent.length?consistent.reduce((s,v)=>s+v.shift,0)/consistent.length:median;
-  if(consistent.length>=2)lockedShifts?.set(String(id),shift);
   for(const point of points)point[1]+=shift;
   diagnostics.aligned.push({driver:String(id),shift,crossings:consistent.length,
    provisional:consistent.length<2,interval:consistent[0]?.interval??null});
@@ -177,7 +170,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceOffi
 class RaceTraceGPS extends HTMLElement {
  constructor(){
   super();this.attachShadow({mode:'open'});this.gps=null;this.timing=null;
-  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.vscPitManual=null;this.pitEnabled=true;this.smoothingSeconds=5;this.viewport=null;this.liveView=false;this.referenceLapAdjustment=0;this.fuelEffect=0.03;this.drag=null;this.applyTimingCorrections=false;this.useDriverProfiles=true;this.hoverPoint=null;this.hoverSeries=null;this.gpsProjectionCache=new Map();this.lapProfileCache=new Map();this.lockedLapShifts=new Map();this.lockedReference=null;
+  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.vscPitManual=null;this.pitEnabled=true;this.smoothingSeconds=5;this.viewport=null;this.liveView=false;this.referenceLapAdjustment=0;this.fuelEffect=0.03;this.drag=null;this.applyTimingCorrections=false;this.useDriverProfiles=true;this.hoverPoint=null;this.hoverSeries=null;this.gpsProjectionCache=new Map();this.lapProfileCache=new Map();
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
@@ -259,7 +252,7 @@ class RaceTraceGPS extends HTMLElement {
      timing.samples.length<this.timing.samples.length);
    if(gpsChanged||timingChanged){
     this.processed=null;this.processedKey=null;this.lastRender=null;
-    this.viewport=null;this.liveView=false;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;this.gpsProjectionCache.clear();this.lapProfileCache.clear();this.lockedLapShifts.clear();this.lockedReference=null;
+    this.viewport=null;this.liveView=false;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;this.gpsProjectionCache.clear();this.lapProfileCache.clear();
    }
    this.gps=gps;this.timing=timing;this.error='';this.draw();
   }catch(e){this.error=String(e);this.draw();}
@@ -493,6 +486,9 @@ class RaceTraceGPS extends HTMLElement {
    if(!this.processed||this.processedKey!==key){
     this.processedKey=key;
    this.processed=(()=>{
+   // Rebuild from the current recording, independent of prior refreshes.
+   // Lap profiles depend on alignment and must not survive a new rebuild.
+   this.lapProfileCache.clear();
    const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
    const geometry=RaceTraceCircuit.prepare(points);
    const frames=RaceTraceRecordingSync.gpsFrames(this.gps,sourceClock);
@@ -592,7 +588,7 @@ class RaceTraceGPS extends HTMLElement {
     }
     traces.set(id,track);
    }
-   const aligned=RaceTraceOfficialAlignment.align(traces,events,{lockedShifts:this.lockedLapShifts});
+   const aligned=RaceTraceOfficialAlignment.align(traces,events);
    // A stationary car remains visible for up to five seconds. If it is
    // officially retired, replace the stationary tail with an X at the last
    // moving point. Use actual GPS movement (metres), not centreline phase:
@@ -853,10 +849,6 @@ class RaceTraceGPS extends HTMLElement {
    let learned=selected.length>=5?Array.from({length:101},(_,j)=>
     j===0?0:j===100?1:median(selected.map(l=>l.bins[j]))):null;
    if(learned)for(let j=1;j<101;j++)learned[j]=Math.max(learned[j],learned[j-1]+1e-7);
-   // Lock the reference profile once enough completed laps exist. Never
-   // retroactively re-fit the entire race on each recorder update.
-   if(this.lockedReference)learned=this.lockedReference.learned;
-   else if(learned&&selected.length>=8)this.lockedReference={learned:learned.slice(),typical};
    // Keep raw GPS for calibration, pit detection and retirement markers.
    // Correct the displayed crossing-time trajectories to official timing at
    // each finish-line crossing, interpolating residuals within each lap.
@@ -1012,7 +1004,7 @@ class RaceTraceGPS extends HTMLElement {
     (orderingChecks.length?' (e.g. L'+orderingChecks[0].lap+' #'+orderingChecks[0].a+
      '/#'+orderingChecks[0].b+')':'');
    const useLearned=this.referenceMode==='learned'&&!!learned;
-   const stableTypical=this.lockedReference?.typical??typical;
+   const stableTypical=typical;
    const firstCross=events.find(e=>String(e[0])===referenceId&&e[1]===raceStartDistance+1);
    const originTime=firstCross?.[2]??crossingAt(ref,raceStartDistance);
    // Normalised lap-time shape is shared by all drivers. Anchor it to
