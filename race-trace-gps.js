@@ -233,8 +233,16 @@ class RaceTraceGPS extends HTMLElement {
    if(gps.schema_version!==1||timing.schema_version!==1)throw Error('Expected recording schema_version 1');
    if(!Array.isArray(gps.geometry?.points)||!Array.isArray(gps.samples)||!Array.isArray(timing.samples))
     throw Error('Missing GPS geometry or samples');
-   if(this.gps&&(this.gps.geometry?.circuit_key!==gps.geometry?.circuit_key||
-     this.gps.samples?.[0]?.recorded_at!==gps.samples?.[0]?.recorded_at)){
+   // A replay restart can reset timing before GPS (or vice versa).
+   // Clear derived traces immediately when EITHER recorder starts a new run.
+   const gpsChanged=!!this.gps&&(this.gps.run!==gps.run||
+     this.gps.geometry?.circuit_key!==gps.geometry?.circuit_key||
+     this.gps.samples?.[0]?.timestamp!==gps.samples?.[0]?.timestamp||
+     gps.samples.length<this.gps.samples.length);
+   const timingChanged=!!this.timing&&(this.timing.run!==timing.run||
+     this.timing.samples?.[0]?.timestamp!==timing.samples?.[0]?.timestamp||
+     timing.samples.length<this.timing.samples.length);
+   if(gpsChanged||timingChanged){
     this.processed=null;this.processedKey=null;this.lastRender=null;
     this.viewport=null;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;this.gpsProjectionCache.clear();this.lapProfileCache.clear();
    }
