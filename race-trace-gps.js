@@ -601,6 +601,28 @@ class RaceTraceGPS extends HTMLElement {
     }
     traces.set(id,track);
    }
+   // Before the first official lap crossing, the provisional finish line
+   // is the leader's first GPS position. Cars behind it wrap to ~0.99.
+   // Unwrap that circular seam using ONE shared grid reference. The
+   // correction is purely topological (not independent lap alignment):
+   // all drivers retain their relative GPS order and session timestamps.
+   if(!events.length&&Number.isFinite(raceStartTime)){
+    const firstValues=[...traces.values()].filter(v=>v.length).map(v=>v[0][1]);
+    const centre=firstValues.slice().sort((a,b)=>a-b)[Math.floor(firstValues.length/2)];
+    for(const track of traces.values()){
+     if(!track.length)continue;
+     const initial=track[0][1];
+     const wrap=Math.round(centre-initial);
+     if(wrap)for(const point of track)point[1]+=wrap;
+    }
+    // A single common translation makes the starting grid visible from
+    // distance zero; the leader stays ahead of the following cars.
+    const starts=[...traces.values()].filter(v=>v.length).map(v=>v[0][1])
+     .sort((a,b)=>a-b);
+    const gridFloor=starts[Math.max(0,Math.floor(starts.length*.1))]??0;
+    for(const track of traces.values())
+     for(const point of track)point[1]-=gridFloor;
+   }
    const aligned=RaceTraceOfficialAlignment.align(traces,events);
    // A stationary car remains visible for up to five seconds. If it is
    // officially retired, replace the stationary tail with an X at the last
