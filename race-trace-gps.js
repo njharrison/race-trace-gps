@@ -1373,11 +1373,11 @@ class RaceTraceGPS extends HTMLElement {
    ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.font='12px system-ui';
    for(let lap=Math.ceil(view.xMin);lap<=view.xMax;lap++){
     ctx.beginPath();ctx.moveTo(x(lap),15);ctx.lineTo(x(lap),h-32);ctx.stroke();
-    ctx.fillStyle='#aab';// GPS alignment places the completion of official lap N at x=N-1.
-    // Label the crossing with its official completed-lap number.
-    // The pre-race circuit is a formation lap, not official lap 2.
-    // Keep the existing completed-lap alignment for racing laps.
-    const axisLabel=lap<raceStartDistance?'Formation':String(lap+1);
+    ctx.fillStyle='#aab';
+    // GPS distance includes the formation circuit; official racing lap 1
+    // begins at raceStartDistance, not at the recording's first circuit.
+    const axisLabel=lap<raceStartDistance
+     ?'Formation':String(lap-raceStartDistance+1);
     ctx.fillText(axisLabel,x(lap)+3,h-12);
    }
    const gapStep=Math.max(1,Math.ceil((view.yMax-view.yMin)/8));
