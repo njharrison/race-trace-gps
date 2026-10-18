@@ -40,7 +40,7 @@ function crossings(recording){
  if(recording?.schema_version!==1||!Array.isArray(recording.samples))throw Error('Invalid timing recording');
  const previous=new Map(),events=[];
  for(const sample of recording.samples){
-  const clock=recording.samples.every(s=>Number.isFinite(s.session_timestamp))?sample.session_timestamp:sample.timestamp;
+  const clock=sample.session_timestamp;
   if(!Number.isFinite(clock))continue;
   for(const driver of sample.drivers||[]){
    const id=String(driver.id??'');
@@ -54,10 +54,10 @@ function crossings(recording){
  }
  return events;
 }
-function gpsFrames(recording,sourceClock=false){
+function gpsFrames(recording){
  if(recording?.schema_version!==1||!Array.isArray(recording.samples))throw Error('Invalid GPS recording');
- return recording.samples.filter(s=>Number.isFinite(sourceClock?s.timestamp:s.recorded_at)).map(s=>({
-  t:sourceClock?s.timestamp:s.recorded_at,
+ return recording.samples.filter(s=>Number.isFinite(s.timestamp)).map(s=>({
+  t:s.timestamp,
   d:(s.drivers||[]).filter(d=>d&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&!(d.x===0&&d.y===0))
     .map(d=>[String(d.id),d.x,d.y])
  }));
@@ -470,7 +470,7 @@ class RaceTraceGPS extends HTMLElement {
   };
   if(!this.gps||!this.timing){status.textContent=this.error||'Waiting for GPS and timing recordings';return;}
   try{
-   const sourceClock=this.timing.samples.length>0&&this.timing.samples.every(s=>Number.isFinite(s.session_timestamp));
+   const sourceClock=true; // All racing calculations use original F1 timestamps.
    function crossingAt(track,d){
     for(let i=1;i<track.length;i++){
      const a=track[i-1],b=track[i],dx=b[1]-a[1];
@@ -481,8 +481,8 @@ class RaceTraceGPS extends HTMLElement {
    }
    // Heavy GPS projection, alignment and clean-lap learning are cached.
    // Viewport, reference-time adjustment and smoothing must not invalidate it.
-   const key=[this.gps.samples.length,this.gps.samples.at(-1)?.recorded_at,
-    this.timing.samples.length,this.timing.samples.at(-1)?.timestamp].join(':');
+   const key=[this.gps.samples.length,this.gps.samples.at(-1)?.timestamp,
+    this.timing.samples.length,this.timing.samples.at(-1)?.session_timestamp].join(':');
    if(!this.processed||this.processedKey!==key){
     this.processedKey=key;
    this.processed=(()=>{
@@ -631,7 +631,7 @@ class RaceTraceGPS extends HTMLElement {
    const retirementAt=new Map();
    const retiredStatus=value=>/^(RETIRED|RET|DNF|OUT)$/i.test(String(value??'').trim());
    for(const sample of this.timing.samples){
-    const sampleClock=Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp;
+    const sampleClock=sample.session_timestamp;
     for(const d of sample.drivers||[]){
      const id=String(d.id??d.racing_number??'');
      if(!id||retirementAt.has(id))continue;
@@ -645,7 +645,7 @@ class RaceTraceGPS extends HTMLElement {
    const finishAt=new Map();
    const finishStatus=v=>/^(FINISHED|FINISH|CLASSIFIED|CHEQUERED|CHECKERED)$/i.test(String(v??'').trim());
    for(const sample of this.timing.samples){
-    const sampleClock=Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp;
+    const sampleClock=sample.session_timestamp;
     if(!Number.isFinite(sampleClock))continue;
     for(const d of sample.drivers||[]){
      const id=String(d.id??d.racing_number??'');
@@ -660,23 +660,23 @@ class RaceTraceGPS extends HTMLElement {
    for(const e of (sourceClock?[]:this.timing.race_control||[])){
     if(isFlagMessage(e.message??e.text??e.description??'')||
        /CHE(?:QU|CK)ERED/i.test(String(e.flag??e.flag_type??''))){
-     const t=Number(e.observed_at??e.timestamp??e.time??(e.utc?Date.parse(e.utc)/1000:NaN));
+     const t=e.utc?Date.parse(e.utc)/1000:NaN;
      if(Number.isFinite(t))flagTimes.push(t);
     }
    }
    for(const sample of this.timing.samples){
-    const sampleClock=Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp;
+    const sampleClock=sample.session_timestamp;
     const text=[sample.race_control_message,sample.message,
      ...(Array.isArray(sample.race_control_messages)?sample.race_control_messages.map(e=>
       typeof e==='string'?e:e.message??e.text??''):[])].join(' ');
-    if(isFlagMessage(text)&&Number.isFinite(sample.timestamp))
+    if(isFlagMessage(text)&&Number.isFinite(sampleClock))
      flagTimes.push(sampleClock);
    }
    // Some recorder versions expose the end-of-session state instead of
    // a race-control message. Accept explicit finished/chequered status,
    // but never infer the flag from an ordinary green-track sample.
    for(const sample of this.timing.samples){
-    if(!Number.isFinite(sample.timestamp))continue;
+    if(!Number.isFinite(sample.session_timestamp))continue;
     if([sample.session_status,sample.session_state,sample.race_status,
          sample.sessionStatus,sample.raceStatus].some(v=>
        /^(FINISHED|FINISH|ENDED|COMPLETE|COMPLETED|CHEQUERED|CHECKERED)$/i.test(String(v??''))))
@@ -818,13 +818,13 @@ class RaceTraceGPS extends HTMLElement {
      String(item.message??item.text??item.description??'');
     if(!/\b(?:LIGHTS? OUT|RACE START(?:ED)?|START OF (?:THE )?RACE)\b/i.test(message)||
        /RESTART|FORMATION|ABORT/i.test(message))return;
-    const raw=typeof item==='object'?(item.timestamp??item.time??item.date??fallback):fallback;
+    const raw=typeof item==='object'?(item.utc?Date.parse(item.utc)/1000:fallback):fallback;
     const t=typeof raw==='number'?raw:Number(raw);
     if(Number.isFinite(t))startMessages.push(t);
    };
    for(const event of (sourceClock?[]:this.timing.race_control||[]))collectStart(event,null);
    for(const sample of this.timing.samples){
-    const sampleClock=Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp;
+    const sampleClock=sample.session_timestamp;
     for(const field of [sample.race_control_messages,sample.race_control,
       sample.messages,sample.race_control_message,sample.message]){
      if(Array.isArray(field))for(const item of field)collectStart(item,sampleClock);
@@ -1128,7 +1128,7 @@ class RaceTraceGPS extends HTMLElement {
    };
    for(const sample of this.timing.samples){
     const type=neutralType(sample.track_status);
-    const t=sourceClock?sample.session_timestamp:sample.timestamp;
+    const t=sample.session_timestamp;
     if(type===undefined||!Number.isFinite(t))continue;
     if(type!==neutral?.type){
      if(neutral){neutral.end=t;neutralPeriods.push(neutral);}
@@ -1300,7 +1300,7 @@ class RaceTraceGPS extends HTMLElement {
      // A sparse GPS feed can miss a stationary pit-box interval.
      // Retain a slow-lap candidate without claiming it is verified.
      // Exclude stops overlapping official neutralisation periods.
-     const neutral=this.timing.samples.some(s=>s.timestamp>=p.t0&&s.timestamp<=p.t1&&
+     const neutral=this.timing.samples.some(s=>Number.isFinite(s.session_timestamp)&&s.session_timestamp>=p.t0&&s.session_timestamp<=p.t1&&
       /^(SC|VSC|SAFETY CAR|VIRTUAL SAFETY CAR)$/i.test(String(s.track_status||'')));
      pitStops.push({id,lap:p.lap,loss:slowdown,neutral,stationary,method:stationary?'GPS stop + lap-excess':'lap-excess only'});
     }
@@ -1467,7 +1467,7 @@ class RaceTraceGPS extends HTMLElement {
    };
    for(const sample of this.timing.samples){
     const type=classifyStatus(sample.track_status);
-    const t=sourceClock?sample.session_timestamp:sample.timestamp;
+    const t=sample.session_timestamp;
     if(type===undefined||!Number.isFinite(t))continue;
     if(type!==active?.type){
      if(active){active.end=t;periods.push(active);}
@@ -1475,7 +1475,7 @@ class RaceTraceGPS extends HTMLElement {
     }
    }
    if(active){
-    active.end=sourceClock?this.timing.samples.at(-1).session_timestamp:this.timing.samples.at(-1).timestamp;
+    active.end=ref.at(-1)[2];
     periods.push(active);
    }
    const refDistanceAtTime=t=>{
@@ -1532,7 +1532,7 @@ class RaceTraceGPS extends HTMLElement {
      const isScEnding=/SAFETY CAR (?:IN THIS LAP|ENDING)|\bSC ENDING\b/i.test(messageText)&&!isVscEnding;
      if(!isVscEnding&&!isScEnding)continue;
      const rawTime=typeof message==='object'?
-      (message.timestamp??message.time??sample.timestamp):sample.timestamp;
+      (message.utc?Date.parse(message.utc)/1000:sample.session_timestamp):sample.session_timestamp;
      const t=typeof rawTime==='number'?rawTime:Number(rawTime);
      if(Number.isFinite(t)&&!endingAnnouncements.some(e=>e.text===(isVscEnding?'VSC ENDING':'SC IN THIS LAP')&&Math.abs(e.t-t)<15))
       endingAnnouncements.push({t,text:isVscEnding?'VSC ENDING':'SC IN THIS LAP',vsc:isVscEnding});
@@ -1579,13 +1579,13 @@ class RaceTraceGPS extends HTMLElement {
    if(this.historyKey!==this.timing||!this.historyByDriver){
     const history=new Map();
     for(const sample of this.timing.samples||[]){
-     if(!Number.isFinite(sample.timestamp))continue;
+     if(!Number.isFinite(sample.session_timestamp))continue;
      for(const d of sample.drivers||[]){
       const id=String(d.id??d.racing_number??'');
       if(!id)continue;
       if(!history.has(id))history.set(id,[]);
       history.get(id).push({
-       t:Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp,
+       t:sample.session_timestamp,
        position:d.position??d.current_position??null,
        completed_laps:Number.isFinite(Number(d.completed_laps))?Number(d.completed_laps):null,
        tyre:d.tyre_compound||d.compound||d.tire_compound||d.tyre||d.tire||null
