@@ -138,7 +138,7 @@ function align(tracks,official,{windowSeconds=45}={}){
     const interval=b[2]-a[2];
     if(interval>windowSeconds*2)break;
     const value=a[1]+(time-a[2])/interval*(b[1]-a[1]);
-    candidates.push({lap,shift:(lap-2)-value,interval});
+    candidates.push({lap,shift:(lap-1)-value,interval});
     break;
    }
   }
@@ -855,7 +855,7 @@ class RaceTraceGPS extends HTMLElement {
     const anchors=[];
     for(const [driver,lap,officialTime] of events){
      if(String(driver)!==String(id)||!Number.isFinite(officialTime))continue;
-     const distance=lap-2;
+     const distance=lap-1;
      const gpsTime=crossingAt(track,distance);
      if(!Number.isFinite(gpsTime))continue;
      const residual=officialTime-gpsTime;
@@ -1402,7 +1402,7 @@ class RaceTraceGPS extends HTMLElement {
     ctx.fillStyle='#aab';
     // Aligned GPS distance zero is the START of racing lap 1.
     // The formation lap is outside the plotted race distance.
-    const axisLabel=String(lap+2);
+    const axisLabel=String(lap+1);
     ctx.fillText(axisLabel,x(lap)+3,h-12);
    }
    const gapStep=Math.max(1,Math.ceil((view.yMax-view.yMin)/8));
