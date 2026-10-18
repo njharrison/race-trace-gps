@@ -567,7 +567,7 @@ class RaceTraceGPS extends HTMLElement {
    for(const e of this.timing.race_control||[]){
     if(isFlagMessage(e.message??e.text??e.description??'')||
        /CHE(?:QU|CK)ERED/i.test(String(e.flag??e.flag_type??''))){
-     const t=Number(e.timestamp??e.time);
+     const t=Number(e.observed_at??e.timestamp??e.time??(e.utc?Date.parse(e.utc)/1000:NaN));
      if(Number.isFinite(t))flagTimes.push(t);
     }
    }
