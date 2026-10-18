@@ -1379,7 +1379,13 @@ class RaceTraceGPS extends HTMLElement {
    const ctx=canvas.getContext('2d'),w=this.canvasWidth,h=this.canvasHeight;
    ctx.setTransform(this.canvasScale,0,0,this.canvasScale,0,0);
    ctx.clearRect(0,0,w,h);ctx.fillStyle='#0b1220';ctx.fillRect(0,0,w,h);
-   if(!this.viewport)this.viewport={xMin:minX,xMax:maxX,yMin:minGap,yMax:maxGap};
+   // Initial/reset X covers the declared race distance, not just laps
+   // received so far. The official first racing lap starts here.
+   if(!this.viewport)this.viewport={
+    xMin:raceStartDistance,
+    xMax:raceStartDistance+raceLaps,
+    yMin:minGap,yMax:maxGap
+   };
    const view=this.viewport;
    const x=v=>52+(v-view.xMin)/Math.max(.001,view.xMax-view.xMin)*(w-76);
    const y=v=>20+(view.yMax-v)/Math.max(.001,view.yMax-view.yMin)*(h-60);
