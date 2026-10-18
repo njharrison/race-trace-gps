@@ -853,11 +853,12 @@ class RaceTraceGPS extends HTMLElement {
       }
       if(stationary)break;
      }
-     if(!stationary)continue;
+     // A sparse GPS feed can miss a stationary pit-box interval.
+     // Retain a slow-lap candidate without claiming it is verified.
      // Exclude stops overlapping official neutralisation periods.
      const neutral=this.timing.samples.some(s=>s.timestamp>=p.t0&&s.timestamp<=p.t1&&
       /^(SC|VSC|SAFETY CAR|VIRTUAL SAFETY CAR)$/i.test(String(s.track_status||'')));
-     pitStops.push({id,lap:p.lap,loss:slowdown,neutral,method:'lap-excess'});
+     pitStops.push({id,lap:p.lap,loss:slowdown,neutral,stationary,method:stationary?'GPS stop + lap-excess':'lap-excess only'});
     }
    }
 
@@ -913,8 +914,8 @@ class RaceTraceGPS extends HTMLElement {
    pitShow.onchange=()=>{this.pitEnabled=pitShow.checked;this.draw();};
    this.shadowRoot.querySelector('#pitlog').textContent=
     'Pit-loss log (provisional lap-excess method): '+
-    (pitStops.length?pitStops.map(p=>'#'+p.id+' L'+p.lap+' '+p.loss.toFixed(1)+'s'+(p.neutral?' [SC/VSC]':'')).join(' · '):'No verified candidates')+
-    ' · '+validStops.length+' eligible · P25 '+(Number.isFinite(expected)?expected.toFixed(1)+'s':'n/a');
+    (pitStops.length?pitStops.map(p=>'#'+p.id+' L'+p.lap+' '+p.loss.toFixed(1)+'s'+(p.neutral?' [SC/VSC]':p.stationary?' [GPS stop]':' [unverified]')).join(' · '):'No candidates')+
+    ' · '+validStops.length+' plausible · '+validStops.filter(p=>p.stationary).length+' GPS-confirmed · P25 '+(Number.isFinite(expected)?expected.toFixed(1)+'s':'n/a');
    const all=[...series.values()].flat();
    if(!all.length)throw Error('No overlapping race distances for gap calculation');
    const minX=Math.min(...all.map(p=>p[0])),maxX=Math.max(...all.map(p=>p[0]));
