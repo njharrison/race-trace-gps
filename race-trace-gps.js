@@ -602,7 +602,7 @@ class RaceTraceGPS extends HTMLElement {
     if(!item)return;
     const message=typeof item==='string'?item:
      String(item.message??item.text??item.description??'');
-    if(!/\\b(?:LIGHTS? OUT|RACE START(?:ED)?|START OF (?:THE )?RACE)\\b/i.test(message)||
+    if(!/\b(?:LIGHTS? OUT|RACE START(?:ED)?|START OF (?:THE )?RACE)\b/i.test(message)||
        /RESTART|FORMATION|ABORT/i.test(message))return;
     const raw=typeof item==='object'?(item.timestamp??item.time??item.date??fallback):fallback;
     const t=typeof raw==='number'?raw:Number(raw);
