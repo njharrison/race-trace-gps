@@ -1393,10 +1393,11 @@ class RaceTraceGPS extends HTMLElement {
     yMin:minGap,yMax:maxGap
    };
    if(this.liveView&&this.viewport){
-    // Follow the furthest recorded race position with one lap of look-ahead.
-    // Only the X extent changes; preserve the current Y range.
+    // Live follows race progress and keeps the default +/- half-lap Y window.
+    // Manual pan/zoom disengages Live, allowing a freely adjusted viewport.
     this.viewport={...this.viewport,xMin:0,
-     xMax:Math.max(1,Math.min(raceLaps,maxX+1))};
+     xMax:Math.max(1,Math.min(raceLaps,maxX+1)),
+     yMin:minGap,yMax:maxGap};
    }
    const view=this.viewport;
    const x=v=>52+(v-view.xMin)/Math.max(.001,view.xMax-view.xMin)*(w-76);
