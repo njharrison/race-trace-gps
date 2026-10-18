@@ -290,7 +290,7 @@ class RaceTraceGPS extends HTMLElement {
     const mx=(e.clientX-rect.left)*canvas.width/rect.width;
     const my=(e.clientY-rect.top)*canvas.height/rect.height;
     const v=this.viewport,w=canvas.width,h=canvas.height;
-    const x=d=>52+(d-v.xMin)/(v.xMax-v.xMin)*(w-70);
+    const x=d=>52+(d-v.xMin)/Math.max(.001,v.xMax-v.xMin)*(w-76);
     const y=d=>20+(v.yMax-d)/(v.yMax-v.yMin)*(h-60);
     let closest=null;
     for(const [id,points] of this.hoverSeries.series){
@@ -1152,7 +1152,7 @@ class RaceTraceGPS extends HTMLElement {
    // pit detection, but draw older laps at ~10-20 points/lap. Preserve
    // local extrema to avoid hiding pit entries or meaningful gap changes.
    // Cache until a new recording snapshot arrives; panning never resamples.
-   if(this.renderSeriesKey!==this.processedKey||!this.renderSeries){
+   if(this.renderSeriesKey!==this.processedKey+':'+this.referenceLapAdjustment+':'+this.referenceMode+':'+this.useDriverProfiles+':'+this.applyTimingCorrections+':'+this.smoothingSeconds||!this.renderSeries){
     const maxDistance=Math.max(...[...series.values()].map(points=>points.at(-1)?.[0]??0));
     const recentFrom=maxDistance-2;
     const decimate=points=>{
@@ -1187,7 +1187,7 @@ class RaceTraceGPS extends HTMLElement {
      return out;
     };
     this.renderSeries=new Map([...series].map(([id,points])=>[id,decimate(points)]));
-    this.renderSeriesKey=this.processedKey;
+    this.renderSeriesKey=this.processedKey+':'+this.referenceLapAdjustment+':'+this.referenceMode+':'+this.useDriverProfiles+':'+this.applyTimingCorrections+':'+this.smoothingSeconds;
    }
    const displaySeries=this.renderSeries;
    let minX=Infinity,maxX=-Infinity,pointCount=0;
