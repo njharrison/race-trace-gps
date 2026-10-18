@@ -295,18 +295,18 @@ class RaceTraceGPS extends HTMLElement {
     let closest=null;
     for(const [id,points] of this.hoverSeries.series){
      if(this.hiddenDrivers.has(id))continue;
-     for(const lapped of [false,true]){
-      if(lapped&&!Number.isFinite(this.hoverSeries.lapSeconds))continue;
+     for(const lapShift of [0,1,-1]){
+      if(lapShift&&!Number.isFinite(this.hoverSeries.lapSeconds))continue;
       for(let j=1;j<points.length;j++){
        const a=points[j-1],b=points[j];
-       const ax=x(a[0]+(lapped?1:0)),ay=y(a[1]+(lapped?this.hoverSeries.lapSeconds:0));
-       const bx=x(b[0]+(lapped?1:0)),by=y(b[1]+(lapped?this.hoverSeries.lapSeconds:0));
+       const ax=x(a[0]+lapShift),ay=y(a[1]+(lapShift*this.hoverSeries.lapSeconds));
+       const bx=x(b[0]+lapShift),by=y(b[1]+(lapShift*this.hoverSeries.lapSeconds));
       if(Math.max(ax,bx)<mx-12||Math.min(ax,bx)>mx+12)continue;
       const dx=bx-ax,dy=by-ay,len=dx*dx+dy*dy;
       const t=len?Math.max(0,Math.min(1,((mx-ax)*dx+(my-ay)*dy)/len)):0;
       const px=ax+t*dx,py=ay+t*dy,dist=Math.hypot(mx-px,my-py);
       if(dist<12&&(!closest||dist<closest.dist))
-       closest={id,dist,d:a[0]+t*(b[0]-a[0]),lapped};
+       closest={id,dist,d:a[0]+t*(b[0]-a[0]),lapShift};
       }
      }
     }
@@ -320,9 +320,9 @@ class RaceTraceGPS extends HTMLElement {
      Number(meta.completed_laps):Math.max(1,Math.floor(closest.d)+1);
     tooltip.replaceChildren();
     const heading=document.createElement('strong');
-    heading.textContent=label+' #'+closest.id+(closest.lapped?' · LAPPED PROJECTION':'');
+    heading.textContent=label+' #'+closest.id+(closest.lapShift===1?' · LAPPED PROJECTION':closest.lapShift===-1?' · LAP AHEAD PROJECTION':'');
     const detail=document.createElement('div');
-    detail.textContent='Position: '+pos+' · Lap: '+lap+(closest.lapped?' · +1 lap overlay':'');
+    detail.textContent='Position: '+pos+' · Lap: '+lap+(closest.lapShift===1?' · +1 lap overlay':closest.lapShift===-1?' · −1 lap overlay':'');
     const detail2=document.createElement('div');
     detail2.textContent='Tyre: '+tyre+' · Team: '+team;
     tooltip.append(heading,detail,detail2);
@@ -360,6 +360,11 @@ class RaceTraceGPS extends HTMLElement {
    const dx=drag.dx/rect.width,dy=drag.dy/rect.height;
    if(drag.zone==='reference'){
     this.referenceLapAdjustment=drag.reference-Math.round(drag.dy/10)/10;
+    // Reference changes alter the one-lap scale. Recompute Y limits
+    // immediately while retaining the user's horizontal viewport.
+    this.viewport={...this.viewport,
+     yMin:-(Math.max(5,((Number.isFinite(this.lastReferenceBase)?this.lastReferenceBase:100)+this.referenceLapAdjustment)/2+5)),
+     yMax:Math.max(5,((Number.isFinite(this.lastReferenceBase)?this.lastReferenceBase:100)+this.referenceLapAdjustment)/2+5)};
    }else{
     const v=drag.start||this.viewport,xr=v.xMax-v.xMin,yr=v.yMax-v.yMin;
     this.viewport={...v,xMin:v.xMin-(drag.zone==='both'?dx*xr:0),
@@ -898,6 +903,7 @@ class RaceTraceGPS extends HTMLElement {
    const series=new Map(),sigma=this.smoothingSeconds/2;
    const origin=Number.isFinite(originTime)?originTime:ref[0][2];
    const referenceSeconds=(Number.isFinite(typical)?typical:100)+referenceAdjustment;
+   this.lastReferenceBase=Number.isFinite(typical)?typical:100;
    // SC/VSC reference correction. Integrate the leader's observed GPS
    // slowdown relative to the ordinary racing reference, beginning at the
    // neutralisation's first recorded position. The offset is retained after
@@ -1194,10 +1200,11 @@ class RaceTraceGPS extends HTMLElement {
    }
    if(!pointCount)throw Error('No overlapping race distances for gap calculation');
    gapValues.sort((a,b)=>a-b);
-   // Clip extremes so an anomalous projection cannot flatten the entire plot.
-   let minGap=Math.min(-2,gapValues[Math.floor(gapValues.length*.01)]-2);
-   let maxGap=Math.max(2,gapValues[Math.floor(gapValues.length*.99)]+2);
-   if(maxGap-minGap<5){minGap-=2;maxGap+=2;}
+   // Default vertical extent is always one reference lap plus 10s:
+   // half a lap above and below zero, with 5s padding at each end.
+   // Keep manual panning available; reference-lap dragging resets Y.
+   const halfRange=Math.max(5,referenceSeconds/2+5);
+   const minGap=-halfRange,maxGap=halfRange;
    const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;
    ctx.clearRect(0,0,w,h);ctx.fillStyle='#0b1220';ctx.fillRect(0,0,w,h);
    if(!this.viewport)this.viewport={xMin:minX,xMax:maxX,yMin:minGap,yMax:maxGap};
@@ -1250,7 +1257,7 @@ class RaceTraceGPS extends HTMLElement {
     if(start!==null&&end!==null&&end>start&&end-start<240)lapDurations.push(end-start);
    }
    lapDurations.sort((a,b)=>a-b);
-   const lapSeconds=useLearned?typical:(lapDurations[Math.floor(lapDurations.length/2)]||100);
+   const lapSeconds=referenceSeconds;
    // Dashed lapped-car overlays use the same geometry as the solid lines,
    // shifted by +1 lap and +1 reference lap time.
    if(this.hoverSeries)this.hoverSeries.lapSeconds=lapSeconds;
@@ -1369,9 +1376,13 @@ class RaceTraceGPS extends HTMLElement {
     // A lapped car has a dashed counterpart one lap and one reference
     // lap-time away. Draw separately; never connect the two curves.
     ctx.strokeStyle=color;ctx.lineWidth=1.15;ctx.globalAlpha=.55;ctx.setLineDash([5,7]);
-    ctx.beginPath();
-    points.forEach((p,j)=>j?ctx.lineTo(x(p[0]+1),y(p[1]+lapSeconds)):ctx.moveTo(x(p[0]+1),y(p[1]+lapSeconds)));
-    ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+    for(const shift of [-1,1]){
+     ctx.beginPath();
+     points.forEach((p,j)=>j?ctx.lineTo(x(p[0]+shift),y(p[1]+shift*lapSeconds)):
+      ctx.moveTo(x(p[0]+shift),y(p[1]+shift*lapSeconds)));
+     ctx.stroke();
+    }
+    ctx.setLineDash([]);ctx.globalAlpha=1;
     ctx.lineWidth=id===referenceId&&!useLearned?2.5:1.5;ctx.beginPath();
     points.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1])):ctx.moveTo(x(p[0]),y(p[1])));
     ctx.stroke();
