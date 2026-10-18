@@ -40,7 +40,7 @@ function crossings(recording){
  if(recording?.schema_version!==1||!Array.isArray(recording.samples))throw Error('Invalid timing recording');
  const previous=new Map(),events=[];
  for(const sample of recording.samples){
-  const clock=Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp;
+  const clock=recording.samples.every(s=>Number.isFinite(s.session_timestamp))?sample.session_timestamp:sample.timestamp;
   if(!Number.isFinite(clock))continue;
   for(const driver of sample.drivers||[]){
    const id=String(driver.id??'');
@@ -124,30 +124,38 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceCali
 (function(root){
 'use strict';
 function align(tracks,official,{windowSeconds=45}={}){
- const diagnostics={aligned:[],missing:[]};
+ const diagnostics={aligned:[],missing:[],provisional:[]};
+ // Anchor on multiple genuine lap crossings, not the initial lap counter.
+ // GPS may already contain one or more formation/pre-race circuits.
  for(const [id,points] of tracks){
-  const events=official.filter(e=>String(e[0])===String(id)&&e[1]>=2)
-    .sort((a,b)=>a[2]-b[2]);
-  const first=events[0];
-  if(!first||points.length<2){diagnostics.missing.push(String(id));continue;}
-  const time=first[2];
-  let closest=null;
-  for(let i=1;i<points.length;i++){
-   const a=points[i-1],b=points[i];
-   if(a[2]>time||b[2]<time||b[2]===a[2])continue;
-   const fraction=(time-a[2])/(b[2]-a[2]);
-   const value=a[1]+fraction*(b[1]-a[1]);
-   const proximity=Math.min(time-a[2],b[2]-time);
-   if(!closest||proximity<closest.proximity)
-    closest={value,proximity,interval:b[2]-a[2]};
+  const events=official.filter(e=>String(e[0])===String(id)&&e[1]>=2&&Number.isFinite(e[2]))
+   .sort((a,b)=>a[2]-b[2]);
+  const candidates=[];
+  for(const [driver,lap,time] of events){
+   for(let i=1;i<points.length;i++){
+    const a=points[i-1],b=points[i];
+    if(a[2]>time||b[2]<time||b[2]<=a[2])continue;
+    const interval=b[2]-a[2];
+    if(interval>windowSeconds*2)break;
+    const value=a[1]+(time-a[2])/interval*(b[1]-a[1]);
+    candidates.push({lap,shift:(lap-1)-value,interval});
+    break;
+   }
   }
-  if(!closest||closest.interval>windowSeconds*2){
-   diagnostics.missing.push(String(id));continue;
+  if(!candidates.length){
+   diagnostics.missing.push(String(id));
+   diagnostics.provisional.push(String(id));
+   continue; // Keep the GPS trajectory visible; do not discard the driver.
   }
-  // Lap 1 is the first racing lap. Official 1->2 occurs at its end.
-  const shift=1-closest.value;
+  const shifts=candidates.map(v=>v.shift).sort((a,b)=>a-b);
+  const median=shifts[Math.floor(shifts.length/2)];
+  const consistent=candidates.filter(v=>Math.abs(v.shift-median)<.18);
+  // A single crossing is provisional; several agreeing crossings validate it.
+  const shift=consistent.length?consistent.reduce((s,v)=>s+v.shift,0)/consistent.length:median;
   for(const point of points)point[1]+=shift;
-  diagnostics.aligned.push({driver:String(id),shift,interval:closest.interval});
+  diagnostics.aligned.push({driver:String(id),shift,crossings:consistent.length,
+   provisional:consistent.length<2,interval:consistent[0]?.interval??null});
+  if(consistent.length<2)diagnostics.provisional.push(String(id));
  }
  return diagnostics;
 }
@@ -479,7 +487,7 @@ class RaceTraceGPS extends HTMLElement {
     this.processed=(()=>{
    const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
    const geometry=RaceTraceCircuit.prepare(points);
-   const sourceClock=this.timing.samples.some(s=>Number.isFinite(s.session_timestamp));
+   const sourceClock=this.timing.samples.length>0&&this.timing.samples.every(s=>Number.isFinite(s.session_timestamp));
    const frames=RaceTraceRecordingSync.gpsFrames(this.gps,sourceClock);
    const events=RaceTraceRecordingSync.crossings(this.timing).filter(e=>e[1]>=2);
    let calibration=null,provisional=true;
@@ -786,25 +794,12 @@ class RaceTraceGPS extends HTMLElement {
     }
    }
    const officialStart=startMessages.length?Math.min(...startMessages):null;
-   let raceStartDistance=this.config.formation_lap?2:1;
-   if(Number.isFinite(officialStart)){
-    // A completed formation lap puts the leader at approximately distance 2
-    // at lights out. Use GPS distance at the actual start to distinguish
-    // it from races recorded directly from lap one.
-    const startTrack=[...traces.values()].sort((a,b)=>
-     (b.at(-1)?.[1]??0)-(a.at(-1)?.[1]??0))[0];
-    if(startTrack?.length){
-     let nearest=null;
-     for(const p of startTrack){
-      if(!nearest||Math.abs(p[2]-officialStart)<Math.abs(nearest[2]-officialStart))
-       nearest=p;
-     }
-     if(nearest&&Math.abs(nearest[2]-officialStart)<30)
-      raceStartDistance=Math.max(1,Math.round(nearest[1]));
-    }
-   }
+   let raceStartDistance=1; // GPS has already been aligned to official racing-lap distance.
+   // Official start messages are retained for diagnostics. They must not
+   // shift the racing-lap axis after per-driver official alignment.
+   // Retain partial and provisional drivers; lap one begins at distance zero.
    const eligible=[...traces].map(([id,v])=>[id,
-    v.filter(p=>p[1]>=raceStartDistance)]).filter(([,v])=>v.length>2);
+    v.filter(p=>p[1]>=raceStartDistance-1)]).filter(([,v])=>v.length>2);
    if(!eligible.length)throw Error('No usable driver trajectories');
    eligible.sort((a,b)=>b[1].at(-1)[1]-a[1].at(-1)[1]);
    const [referenceId,reference]=eligible[0];
