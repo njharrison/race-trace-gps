@@ -385,9 +385,12 @@ class RaceTraceGPS extends HTMLElement {
     this.referenceLapAdjustment=drag.reference-Math.round(drag.dy/10)/10;
     // Reference changes alter the one-lap scale. Recompute Y limits
     // immediately while retaining the user's horizontal viewport.
-    this.viewport={...this.viewport,
-     yMin:-(Math.max(5,((Number.isFinite(this.lastReferenceBase)?this.lastReferenceBase:100)+this.referenceLapAdjustment)/2+5)),
-     yMax:Math.max(5,((Number.isFinite(this.lastReferenceBase)?this.lastReferenceBase:100)+this.referenceLapAdjustment)/2+5)};
+    // Preserve any Y pan performed with the left-hand drag. Only change
+    // the half-range around the user's existing vertical centre.
+    const oldHalf=(this.viewport.yMax-this.viewport.yMin)/2;
+    const centre=(this.viewport.yMax+this.viewport.yMin)/2;
+    const newHalf=Math.max(5,((Number.isFinite(this.lastReferenceBase)?this.lastReferenceBase:100)+this.referenceLapAdjustment)/2+5);
+    this.viewport={...this.viewport,yMin:centre-newHalf,yMax:centre+newHalf};
    }else{
     const v=drag.start||this.viewport,xr=v.xMax-v.xMin,yr=v.yMax-v.yMin;
     this.viewport={...v,xMin:v.xMin-(drag.zone==='both'?dx*xr:0),
