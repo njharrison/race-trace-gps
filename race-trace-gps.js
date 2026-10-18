@@ -898,28 +898,61 @@ class RaceTraceGPS extends HTMLElement {
     const progress=sharedProfile?sharedProfile[j]*(1-f)+sharedProfile[j+1]*f:fraction;
     return origin+(lap+progress-1)*referenceSeconds;
    };
+   // Build an independent neutralised-pace clock from several circulating
+   // cars at equal distance. Do not use the leader alone: a leader pit stop
+   // must remain visible as a time loss, not redefine the reference.
    const neutralSegments=[];
    let cumulative=0;
+   const candidateTracks=[...eligible].map(([id,track])=>({
+    id,track:track.filter((p,i)=>!i||p[1]>track[i-1][1]+1e-7)
+   }));
+   const neutralPaceStep=(from,to)=>{
+    const values=[];
+    for(const {track} of candidateTracks){
+     if(track.length<2||from<track[0][1]||to>track.at(-1)[1])continue;
+     const t0=crossingAt(track,from),t1=crossingAt(track,to);
+     if(Number.isFinite(t0)&&Number.isFinite(t1)&&t1>t0)
+      values.push(t1-t0);
+    }
+    if(values.length<3)return null;
+    values.sort((a,b)=>a-b);
+    // Fastest half removes pit-lane/garage delays and cars slowing much
+    // more than the pack, without following one potentially pitting leader.
+    const count=Math.max(2,Math.ceil(values.length/2));
+    const normal=values.slice(0,count);
+    return normal[Math.floor(normal.length/2)];
+   };
    for(const p of neutralPeriods){
     if(p.start>ref.at(-1)[2])break;
     const from=refDistanceAtTimestamp(p.start);
     const to=refDistanceAtTimestamp(Math.min(p.end,ref.at(-1)[2]));
     if(to<=from)continue;
-    const t0=refTimeAtDistance(from),t1=refTimeAtDistance(to);
-    if(!Number.isFinite(t0)||!Number.isFinite(t1))continue;
-    const delta=(t1-t0)-(racingRefAt(to)-racingRefAt(from));
-    neutralSegments.push({from,to,before:cumulative,delta,t0});
-    cumulative+=delta;
+    const nodes=[{d:from,offset:cumulative}];
+    let cursor=from;
+    while(cursor<to-1e-7){
+     const next=Math.min(to,Math.floor(cursor*50+1.000001)/50);
+     if(next<=cursor+1e-8)break;
+     const pace=neutralPaceStep(cursor,next);
+     const leader0=refTimeAtDistance(cursor),leader1=refTimeAtDistance(next);
+     const fallback=Number.isFinite(leader0)&&Number.isFinite(leader1)?leader1-leader0:null;
+     const actual=pace??fallback;
+     if(Number.isFinite(actual))
+      cumulative+=actual-(racingRefAt(next)-racingRefAt(cursor));
+     nodes.push({d:next,offset:cumulative});
+     cursor=next;
+    }
+    if(nodes.length>1)neutralSegments.push({from,to,nodes});
    }
    const neutralOffsetAt=d=>{
     let offset=0;
     for(const seg of neutralSegments){
      if(d<=seg.from)break;
-     if(d>=seg.to){offset=seg.before+seg.delta;continue;}
-     const actual=refTimeAtDistance(d);
-     if(!Number.isFinite(actual))return seg.before;
-     return seg.before+(actual-seg.t0)-
-      (racingRefAt(d)-racingRefAt(seg.from));
+     const nodes=seg.nodes;
+     if(d>=seg.to){offset=nodes.at(-1).offset;continue;}
+     let lo=0,hi=nodes.length-1;
+     while(hi-lo>1){const mid=(lo+hi)>>1;if(nodes[mid].d<d)lo=mid;else hi=mid;}
+     const a=nodes[lo],b=nodes[hi];
+     return a.offset+(d-a.d)/Math.max(1e-8,b.d-a.d)*(b.offset-a.offset);
     }
     return offset;
    };
