@@ -577,10 +577,15 @@ class RaceTraceGPS extends HTMLElement {
    }
    if(flagTimes.length){
     const flagTime=Math.min(...flagTimes);
-    // Official lap-completion events mark actual S/F crossings.
-    for(const [id,lap,t] of events){
-     if(!retirementAt.has(id)&&!finishAt.has(id)&&t>=flagTime)
-      finishAt.set(id,{time:t,lap,source:'flag crossing'});
+    // Each driver finishes at their OWN first S/F crossing after the
+    // chequered flag, regardless of how many laps behind they are.
+    // Replace status-only estimates with exact official crossings.
+    const crossings=[...events].sort((a,b)=>a[2]-b[2]);
+    const crossed=new Set();
+    for(const [id,lap,t] of crossings){
+     if(retirementAt.has(id)||crossed.has(id)||t<flagTime-2)continue;
+     crossed.add(id);
+     finishAt.set(id,{time:t,lap,source:'flag crossing'});
     }
    }
    const markers=new Map();
