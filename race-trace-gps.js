@@ -138,7 +138,7 @@ function align(tracks,official,{windowSeconds=45}={}){
     const interval=b[2]-a[2];
     if(interval>windowSeconds*2)break;
     const value=a[1]+(time-a[2])/interval*(b[1]-a[1]);
-    candidates.push({lap,shift:(lap-1)-value,interval});
+    candidates.push({lap,shift:lap-value,interval});
     break;
    }
   }
@@ -794,7 +794,7 @@ class RaceTraceGPS extends HTMLElement {
     }
    }
    const officialStart=startMessages.length?Math.min(...startMessages):null;
-   let raceStartDistance=1; // GPS has already been aligned to official racing-lap distance.
+   let raceStartDistance=1; // Racing lap 1 spans distance 1 to 2; official completed lap 2 ends at distance 2.
    // Official start messages are retained for diagnostics. They must not
    // shift the racing-lap axis after per-driver official alignment.
    // Retain partial and provisional drivers; lap one begins at distance zero.
@@ -855,7 +855,7 @@ class RaceTraceGPS extends HTMLElement {
     const anchors=[];
     for(const [driver,lap,officialTime] of events){
      if(String(driver)!==String(id)||!Number.isFinite(officialTime))continue;
-     const distance=lap-1;
+     const distance=lap;
      const gpsTime=crossingAt(track,distance);
      if(!Number.isFinite(gpsTime))continue;
      const residual=officialTime-gpsTime;
@@ -1402,7 +1402,7 @@ class RaceTraceGPS extends HTMLElement {
     ctx.fillStyle='#aab';
     // Aligned GPS distance zero is the START of racing lap 1.
     // The formation lap is outside the plotted race distance.
-    const axisLabel=String(lap+1);
+    const axisLabel=String(lap);
     ctx.fillText(axisLabel,x(lap)+3,h-12);
    }
    const gapStep=Math.max(1,Math.ceil((view.yMax-view.yMin)/8));
