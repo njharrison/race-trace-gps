@@ -387,7 +387,7 @@ class RaceTraceGPS extends HTMLElement {
     }
     const label=String(meta.tla||meta.abbreviation||meta.name||meta.driver_name||'#'+closest.id);
     const team=meta.team_name||meta.team||meta.constructor_name||'Unknown';
-    const tyre=historic?.tyre||'Unknown';
+    const tyre=historic?.tyre||meta.tyre_compound||'Unknown';
     const pos=historic?.position??'Unknown';
     const lap=historic?.completed_laps??Math.max(1,Math.floor(closest.d)+1);
     tooltip.replaceChildren();
@@ -1533,7 +1533,7 @@ class RaceTraceGPS extends HTMLElement {
      name:d.name||prior.name,
      team_color:d.team_color||prior.team_color,
      team_name:d.team_name||d.team||prior.team_name,
-     tyre_compound:d.tyre_compound||d.compound||d.tyre||prior.tyre_compound,
+     tyre_compound:d.tyre_compound||d.tire_compound||d.compound||d.tyre||d.tire||prior.tyre_compound,
      position:d.current_position??d.position??prior.position,
      completed_laps:d.completed_laps??prior.completed_laps
     });
@@ -1550,10 +1550,10 @@ class RaceTraceGPS extends HTMLElement {
       if(!id)continue;
       if(!history.has(id))history.set(id,[]);
       history.get(id).push({
-       t:sample.timestamp,
+       t:Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp,
        position:d.position??d.current_position??null,
        completed_laps:Number.isFinite(Number(d.completed_laps))?Number(d.completed_laps):null,
-       tyre:d.tyre_compound||d.compound||d.tire_compound||d.tyre||null
+       tyre:d.tyre_compound||d.compound||d.tire_compound||d.tyre||d.tire||null
       });
      }
     }
