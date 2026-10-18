@@ -921,6 +921,48 @@ class RaceTraceGPS extends HTMLElement {
     'Pit-loss log (provisional lap-excess method): '+
     (pitStops.length?pitStops.map(p=>'#'+p.id+' L'+p.lap+' '+p.loss.toFixed(1)+'s'+(p.neutral?' [SC/VSC]':p.stationary?' [GPS stop]':' [unverified]')).join(' · '):'No candidates')+
     ' · '+validStops.length+' plausible · '+validStops.filter(p=>p.stationary).length+' GPS-confirmed · P25 '+(Number.isFinite(expected)?expected.toFixed(1)+'s':'n/a');
+   // Display-only decimation: retain full GPS data for calculations and
+   // pit detection, but draw older laps at ~10-20 points/lap. Preserve
+   // local extrema to avoid hiding pit entries or meaningful gap changes.
+   // Cache until a new recording snapshot arrives; panning never resamples.
+   if(this.renderSeriesKey!==this.processedKey||!this.renderSeries){
+    const maxDistance=Math.max(...[...series.values()].map(points=>points.at(-1)?.[0]??0));
+    const recentFrom=maxDistance-2;
+    const decimate=points=>{
+     if(points.length<100)return points;
+     const out=[];let i=0;
+     while(i<points.length){
+      const lap=Math.floor(points[i][0]);
+      let end=i+1;
+      while(end<points.length&&Math.floor(points[end][0])===lap)end++;
+      if(lap>=Math.floor(recentFrom)-1||end-i<=24){
+       for(let j=i;j<end;j++)out.push(points[j]);
+      }else{
+       // Eight bins, first/last plus minimum and maximum in each bin.
+       // Retains sharp pit-loss changes without drawing every GPS point.
+       out.push(points[i]);
+       for(let bin=0;bin<8;bin++){
+        const from=i+Math.floor((end-i)*bin/8);
+        const to=i+Math.floor((end-i)*(bin+1)/8);
+        if(to<=from)continue;
+        let lo=from,hi=from;
+        for(let j=from+1;j<to;j++){
+         if(points[j][1]<points[lo][1])lo=j;
+         if(points[j][1]>points[hi][1])hi=j;
+        }
+        for(const j of [...new Set([lo,hi])].sort((a,b)=>a-b))
+         if(j>i&&j<end-1)out.push(points[j]);
+       }
+       out.push(points[end-1]);
+      }
+      i=end;
+     }
+     return out;
+    };
+    this.renderSeries=new Map([...series].map(([id,points])=>[id,decimate(points)]));
+    this.renderSeriesKey=this.processedKey;
+   }
+   const displaySeries=this.renderSeries;
    const all=[...series.values()].flat();
    if(!all.length)throw Error('No overlapping race distances for gap calculation');
    const minX=Math.min(...all.map(p=>p[0])),maxX=Math.max(...all.map(p=>p[0]));
@@ -1064,7 +1106,7 @@ class RaceTraceGPS extends HTMLElement {
     });
    }
    const legend=this.shadowRoot.querySelector('#legend');legend.replaceChildren();
-   this.hoverSeries={series,meta:driverMeta};
+   this.hoverSeries={series:displaySeries,meta:driverMeta};
    // Stable 2026 team colours, keyed by race number. Prefer live team_color
    // when available, but never use an arbitrary palette for known drivers.
    const teamColours={
@@ -1081,7 +1123,7 @@ class RaceTraceGPS extends HTMLElement {
     '11':'#909090','77':'#909090' // Cadillac: Perez, Bottas
    };
    const colours=new Map();let colourIndex=0;
-   for(const [id,points] of series){
+   for(const [id,points] of displaySeries){
     const meta=driverMeta.get(id)||{};
     const label=String(meta.tla||meta.abbreviation||meta.name||meta.driver_name||('#'+id));
     const explicit=String(meta.team_color||'');
@@ -1094,7 +1136,7 @@ class RaceTraceGPS extends HTMLElement {
     button.onclick=()=>{if(this.hiddenDrivers.has(id))this.hiddenDrivers.delete(id);else this.hiddenDrivers.add(id);this.draw();};
     legend.append(button);
    }
-   for(const [id,points] of series){
+   for(const [id,points] of displaySeries){
     if(this.hiddenDrivers.has(id))continue;
     const color=colours.get(id)||'#fff';i++;
     // A lapped car has a dashed counterpart one lap and one reference
@@ -1112,7 +1154,7 @@ class RaceTraceGPS extends HTMLElement {
    // Place labels after strokes so they remain legible over the lines.
    ctx.save();ctx.font='bold 9px system-ui';ctx.textBaseline='middle';
    const labelBoxes=[];
-   for(const [id,points] of series){
+   for(const [id,points] of displaySeries){
     if(this.hiddenDrivers.has(id))continue;
     const visible=points.filter(p=>p[0]>=view.xMin&&p[0]<=view.xMax);
     if(!visible.length)continue;
