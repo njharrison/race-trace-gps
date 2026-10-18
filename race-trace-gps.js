@@ -544,6 +544,45 @@ class RaceTraceGPS extends HTMLElement {
       retirementAt.set(id,Number(sample.timestamp));
     }
    }
+   // Finish-line clipping is per driver, not at the leader's flag time.
+   // First use explicit finished status; otherwise wait for a recorded
+   // chequered flag and that driver's next official completed-lap crossing.
+   const finishAt=new Map();
+   const finishStatus=v=>/^(FINISHED|FINISH|CLASSIFIED|CHEQUERED|CHECKERED)$/i.test(String(v??'').trim());
+   for(const sample of this.timing.samples){
+    if(!Number.isFinite(sample.timestamp))continue;
+    for(const d of sample.drivers||[]){
+     const id=String(d.id??d.racing_number??'');
+     if(!id||finishAt.has(id)||retirementAt.has(id))continue;
+     if(d.finished===true||d.is_finished===true||
+        [d.status,d.driver_status,d.race_status].some(finishStatus))
+      finishAt.set(id,{time:sample.timestamp,source:'status'});
+    }
+   }
+   const flagTimes=[];
+   const isFlagMessage=v=>/CHE(?:QU|CK)ERED FLAG|CHE(?:QU|CK)ERED|RACE FINISHED|END OF RACE/i.test(String(v??''));
+   for(const e of this.timing.race_control||[]){
+    if(isFlagMessage(e.message??e.text??e.description??'')||
+       /CHE(?:QU|CK)ERED/i.test(String(e.flag??e.flag_type??''))){
+     const t=Number(e.timestamp??e.time);
+     if(Number.isFinite(t))flagTimes.push(t);
+    }
+   }
+   for(const sample of this.timing.samples){
+    const text=[sample.race_control_message,sample.message,
+     ...(Array.isArray(sample.race_control_messages)?sample.race_control_messages.map(e=>
+      typeof e==='string'?e:e.message??e.text??''):[])].join(' ');
+    if(isFlagMessage(text)&&Number.isFinite(sample.timestamp))
+     flagTimes.push(sample.timestamp);
+   }
+   if(flagTimes.length){
+    const flagTime=Math.min(...flagTimes);
+    // Official lap-completion events mark actual S/F crossings.
+    for(const [id,lap,t] of events){
+     if(!retirementAt.has(id)&&!finishAt.has(id)&&t>=flagTime)
+      finishAt.set(id,{time:t,lap,source:'flag crossing'});
+    }
+   }
    const markers=new Map();
    let stopped=0;
    const gpsByDriver=new Map();
@@ -555,11 +594,21 @@ class RaceTraceGPS extends HTMLElement {
     if(track.length<2)continue;
     const gps=gpsByDriver.get(id)||[];
     const retirement=retirementAt.get(id);
+    const finish=finishAt.get(id);
+    if(finish){
+     // Include the actual finish-line crossing, but not the in-lap.
+     // Prefer the crossing distance when an official completed-lap
+     // transition is known; status-only feeds use the status timestamp.
+     const finishDistance=finish.lap;
+     const end=track.findIndex(p=>Number.isFinite(finishDistance)?
+      p[1]>finishDistance+0.003:p[2]>finish.time);
+     if(end>=0)traces.set(id,track.slice(0,Math.max(1,end)));
+    }
     // Ignore post-retirement GPS updates even if the car is transported.
     if(Number.isFinite(retirement)){
-     let lastIndex=track.findIndex(p=>p[2]>retirement);
-     if(lastIndex<0)lastIndex=track.length;
-     traces.set(id,track.slice(0,lastIndex));
+     let lastIndex=traces.get(id).findIndex(p=>p[2]>retirement);
+     if(lastIndex<0)lastIndex=traces.get(id).length;
+     traces.set(id,traces.get(id).slice(0,lastIndex));
     }
     const bounded=traces.get(id);
     if(!bounded.length)continue;
