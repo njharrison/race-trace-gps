@@ -903,7 +903,7 @@ class RaceTraceGPS extends HTMLElement {
    // must remain visible as a time loss, not redefine the reference.
    const neutralSegments=[];
    let cumulative=0;
-   const candidateTracks=[...eligible].map(([id,track])=>({
+   const candidateTracks=[...traces].filter(([,track])=>track.length>2).map(([id,track])=>({
     id,track:track.filter((p,i)=>!i||p[1]>track[i-1][1]+1e-7)
    }));
    const neutralPaceStep=(from,to)=>{
