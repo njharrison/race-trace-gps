@@ -52,3 +52,26 @@ Driver buttons below the graph toggle visibility; **Show all drivers** resets th
 The card detects official retirement from `retired: true` or driver `status`, `driver_status`, or `race_status` equal to `RETIRED`, `RET`, `DNF`, or `OUT` in timing samples. An officially retired driver's trace ends at the last moving GPS position and displays a large X; no stationary tail is shown.
 
 Without an official retirement, a stationary car's trace may continue vertically for up to five seconds before it freezes. Motion detection uses GPS coordinate displacement of at least one metre between observations. This implementation is provisional and should be checked against Bortoleto's Singapore recording, particularly the exact field carrying retirement status and whether the GPS recorder continues to sample a stopped car. It does not infer a five-second interval when recording samples have ceased entirely.
+
+
+## Experimental GPS delta publisher
+
+The card supports `gps-recording-delta.json` next to the full archive and
+automatically falls back to the full file when the delta is missing or stale.
+The optional publisher lives at `tools/publish_gps_delta.py`:
+
+```bash
+python3 tools/publish_gps_delta.py /config/www/f1-race-trace/gps-recording.json
+```
+
+Run this **after each successful GPS archive write** in the GPS recorder, or
+periodically while the replay is active. It writes the rolling 90-second delta
+atomically, leaving the full archive untouched. Until the publisher is installed
+in the running recorder, the card continues downloading the full GPS archive.
+
+For custom locations, set `gps_delta_url` on the card. The timing delta is
+already provided by the timing recorder. Completed clean-lap profiles and GPS
+geometry projections are cached client-side between updates.
+
+**Deployment note:** This experimental repository does not install or modify
+the running GPS recorder. The script must be wired into the recorder separately.
