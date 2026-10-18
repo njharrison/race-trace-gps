@@ -1340,7 +1340,7 @@ class RaceTraceGPS extends HTMLElement {
     });
    }
    const legend=this.shadowRoot.querySelector('#legend');legend.replaceChildren();
-   this.hoverSeries={series:displaySeries,meta:driverMeta};
+   this.hoverSeries={series:displaySeries,meta:driverMeta,lapSeconds};
    // Stable 2026 team colours, keyed by race number. Prefer live team_color
    // when available, but never use an arbitrary palette for known drivers.
    const teamColours={
@@ -1426,9 +1426,20 @@ class RaceTraceGPS extends HTMLElement {
     // The marker must use the same profiled, smoothed gap as its trace.
     // The legacy timeAtDistance calculation has a different sign and
     // reference profile, so it can put the X off-screen after the Y flip.
-    const endPoint=series.get(id)?.at(-1);
-    if(!endPoint)continue;
-    const px=x(endPoint[0]),py=y(endPoint[1]);
+    const pts=series.get(id);
+    if(!pts?.length||!point||!Number.isFinite(point[1]))continue;
+    // Use the actual retirement distance, not the last rendered point.
+    // A trace may continue past that point or be filtered at race start.
+    const distance=point[1];
+    let lo=0,hi=pts.length-1;
+    if(distance<pts[0][0]||distance>pts[hi][0])continue;
+    while(hi-lo>1){
+     const mid=(lo+hi)>>1;
+     if(pts[mid][0]<distance)lo=mid;else hi=mid;
+    }
+    const a=pts[lo],b=pts[hi],span=b[0]-a[0];
+    const gap=span>1e-8?a[1]+(distance-a[0])/span*(b[1]-a[1]):a[1];
+    const px=x(distance),py=y(gap);
     // Draw only if the actual retirement point is inside the viewport.
     if(!Number.isFinite(px)||!Number.isFinite(py)||
        px<52||px>w-18||py<15||py>h-32)continue;
