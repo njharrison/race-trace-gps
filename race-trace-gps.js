@@ -944,10 +944,19 @@ class RaceTraceGPS extends HTMLElement {
    // authoritative and must not be inferred from a driver's speed alone.
    const periods=[];
    let active=null;
+   // A sparse timing sample may omit track_status entirely. Missing data
+   // is NOT a green flag; only an explicit non-neutral status closes a VSC/SC.
+   const classifyStatus=value=>{
+    const s=String(value??'').trim().toUpperCase();
+    if(!s)return undefined;
+    if(/^(VSC|VIRTUAL SAFETY CAR|VIRTUAL SAFETY CAR DEPLOYED)$/.test(s))return 'VSC';
+    if(/^(SC|SAFETY CAR|SAFETY CAR DEPLOYED)$/.test(s))return 'SC';
+    if(/^(1|GREEN|CLEAR|ALL CLEAR|NORMAL)$/.test(s))return null;
+    return undefined;
+   };
    for(const sample of this.timing.samples){
-    const value=String(sample.track_status||'').toUpperCase();
-    const type=/^(VSC|VIRTUAL SAFETY CAR)$/.test(value)?'VSC':
-      /^(SC|SAFETY CAR)$/.test(value)?'SC':null;
+    const type=classifyStatus(sample.track_status);
+    if(type===undefined)continue;
     if(type!==active?.type){
      if(active){active.end=sample.timestamp;periods.push(active);}
      active=type?{type,start:sample.timestamp}:null;
@@ -972,19 +981,22 @@ class RaceTraceGPS extends HTMLElement {
    // A time interval maps to diagonal boundaries in gap/distance space.
    for(const p of periods){
     if(!(p.end>p.start))continue;
-    const start=refDistanceAtTime(p.start),end=refDistanceAtTime(p.end);
+    // The most recent neutralisation may extend beyond the last leader GPS
+    // frame; keep its boundary visible at the end of the recorded trace.
+    const start=refDistanceAtTime(Math.max(ref[0][2],Math.min(p.start,ref.at(-1)[2])));
+    const end=refDistanceAtTime(Math.max(ref[0][2],Math.min(p.end,ref.at(-1)[2])));
     if(start===null||end===null)continue;
     ctx.fillStyle=p.type==='VSC'?'rgba(234,179,8,.16)':'rgba(251,146,60,.16)';
     ctx.strokeStyle=p.type==='VSC'?'#eab308':'#fb923c';
     ctx.beginPath();
-    ctx.moveTo(x(start+minGap/lapSeconds),y(minGap));
-    ctx.lineTo(x(end+minGap/lapSeconds),y(minGap));
-    ctx.lineTo(x(end+maxGap/lapSeconds),y(maxGap));
-    ctx.lineTo(x(start+maxGap/lapSeconds),y(maxGap));
+    ctx.moveTo(x(start+view.yMin/lapSeconds),y(view.yMin));
+    ctx.lineTo(x(end+view.yMin/lapSeconds),y(view.yMin));
+    ctx.lineTo(x(end+view.yMax/lapSeconds),y(view.yMax));
+    ctx.lineTo(x(start+view.yMax/lapSeconds),y(view.yMax));
     ctx.closePath();ctx.fill();
     ctx.setLineDash([5,5]);ctx.beginPath();
-    ctx.moveTo(x(start+minGap/lapSeconds),y(minGap));
-    ctx.lineTo(x(start+maxGap/lapSeconds),y(maxGap));ctx.stroke();ctx.setLineDash([]);
+    ctx.moveTo(x(start+view.yMin/lapSeconds),y(view.yMin));
+    ctx.lineTo(x(start+view.yMax/lapSeconds),y(view.yMax));ctx.stroke();ctx.setLineDash([]);
     ctx.font='bold 13px system-ui';ctx.fillText(p.type,x(start)+4,30);
    }
    // Race-control announcements are distinct from the status transition.
