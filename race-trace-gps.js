@@ -617,9 +617,10 @@ class RaceTraceGPS extends HTMLElement {
      // Include the actual finish-line crossing, but not the in-lap.
      // Prefer the crossing distance when an official completed-lap
      // transition is known; status-only feeds use the status timestamp.
-     const finishDistance=finish.lap;
-     const end=track.findIndex(p=>Number.isFinite(finishDistance)?
-      p[1]>finishDistance+0.003:p[2]>finish.time);
+     // The official lap counter and GPS unwrapped-distance coordinate
+     // can differ (formation lap, alignment). Never compare them.
+     // Cut at the official crossing's TIMESTAMP instead.
+     const end=track.findIndex(p=>p[2]>finish.time+0.5);
      if(end>=0)traces.set(id,track.slice(0,Math.max(1,end)));
     }
     // Ignore post-retirement GPS updates even if the car is transported.
