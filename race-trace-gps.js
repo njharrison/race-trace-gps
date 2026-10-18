@@ -313,12 +313,34 @@ class RaceTraceGPS extends HTMLElement {
     }
     if(!closest){tooltip.style.display='none';return;}
     const meta=this.hoverSeries.meta.get(closest.id)||{};
+    // Find the recorded time at the hovered race distance, then look up
+    // historical classification. Binary searches avoid per-mousemove scans.
+    const track=this.hoverSeries.historyTracks?.get(closest.id);
+    let hoverTime=null;
+    if(track?.length){
+     let lo=0,hi=track.length-1;
+     const distance=closest.d;
+     if(distance<=track[0][0])hoverTime=track[0][2];
+     else if(distance>=track[hi][0])hoverTime=track[hi][2];
+     else{
+      while(hi-lo>1){const mid=(lo+hi)>>1;if(track[mid][0]<distance)lo=mid;else hi=mid;}
+      const a=track[lo],b=track[hi],span=b[0]-a[0];
+      hoverTime=span>1e-8?a[2]+(distance-a[0])/span*(b[2]-a[2]):a[2];
+     }
+    }
+    const history=this.hoverSeries.history?.get(closest.id);
+    let historic=null;
+    if(history?.length&&Number.isFinite(hoverTime)){
+     let lo=0,hi=history.length;
+     while(lo<hi){const mid=(lo+hi)>>1;if(history[mid].t<=hoverTime)lo=mid+1;else hi=mid;}
+     historic=history[Math.max(0,lo-1)];
+     if(historic&&Math.abs(historic.t-hoverTime)>120)historic=null;
+    }
     const label=String(meta.tla||meta.abbreviation||meta.name||meta.driver_name||'#'+closest.id);
     const team=meta.team_name||meta.team||meta.constructor_name||'Unknown';
-    const tyre=meta.tyre_compound||meta.compound||meta.tire_compound||meta.tyre||'Unknown';
-    const pos=meta.position??'Unknown';
-    const lap=Number.isFinite(Number(meta.completed_laps))&&Number(meta.completed_laps)>0?
-     Number(meta.completed_laps):Math.max(1,Math.floor(closest.d)+1);
+    const tyre=historic?.tyre||'Unknown';
+    const pos=historic?.position??'Unknown';
+    const lap=historic?.completed_laps??Math.max(1,Math.floor(closest.d)+1);
     tooltip.replaceChildren();
     const heading=document.createElement('strong');
     heading.textContent=label+' #'+closest.id+(closest.lapShift===1?' · LAPPED PROJECTION':closest.lapShift===-1?' · LAP AHEAD PROJECTION':'');
@@ -1341,7 +1363,30 @@ class RaceTraceGPS extends HTMLElement {
     });
    }
    const legend=this.shadowRoot.querySelector('#legend');legend.replaceChildren();
-   this.hoverSeries={series:displaySeries,meta:driverMeta,lapSeconds};
+   // Index historical driver states once per recording update. The
+   // mousemove handler only does O(log N) lookups for the selected car.
+   if(this.historyKey!==this.timing||!this.historyByDriver){
+    const history=new Map();
+    for(const sample of this.timing.samples||[]){
+     if(!Number.isFinite(sample.timestamp))continue;
+     for(const d of sample.drivers||[]){
+      const id=String(d.id??d.racing_number??'');
+      if(!id)continue;
+      if(!history.has(id))history.set(id,[]);
+      history.get(id).push({
+       t:sample.timestamp,
+       position:d.position??d.current_position??null,
+       completed_laps:Number.isFinite(Number(d.completed_laps))?Number(d.completed_laps):null,
+       tyre:d.tyre_compound||d.compound||d.tire_compound||d.tyre||null
+      });
+     }
+    }
+    for(const states of history.values())states.sort((a,b)=>a.t-b.t);
+    this.historyByDriver=history;
+    this.historyKey=this.timing;
+   }
+   this.hoverSeries={series:displaySeries,meta:driverMeta,lapSeconds,
+    history:this.historyByDriver,historyTracks:traces};
    // Stable 2026 team colours, keyed by race number. Prefer live team_color
    // when available, but never use an arbitrary palette for known drivers.
    const teamColours={
