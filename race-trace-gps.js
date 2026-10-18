@@ -1150,7 +1150,10 @@ class RaceTraceGPS extends HTMLElement {
     const source=this.applyTimingCorrections?correctedTraces.get(id)||track:track;
     const segments=[];let segment=[],prev=null;
     for(const p of source){
-     if(p[1]<raceStartDistance)continue;
+     // Official lap N finishes at GPS distance N-1. The first racing
+     // lap therefore spans [raceStartDistance-1, raceStartDistance].
+     // Do not discard it: the prior threshold hid lap one entirely.
+     if(p[1]<raceStartDistance-1)continue;
      if(prev&&(p[2]-prev[2]>8||p[2]<=prev[2]||Math.abs(p[1]-prev[1])>.16)){
       if(segment.length)segments.push(segment);
       segment=[];
