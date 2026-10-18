@@ -470,6 +470,7 @@ class RaceTraceGPS extends HTMLElement {
   };
   if(!this.gps||!this.timing){status.textContent=this.error||'Waiting for GPS and timing recordings';return;}
   try{
+   const sourceClock=this.timing.samples.length>0&&this.timing.samples.every(s=>Number.isFinite(s.session_timestamp));
    function crossingAt(track,d){
     for(let i=1;i<track.length;i++){
      const a=track[i-1],b=track[i],dx=b[1]-a[1];
@@ -484,7 +485,6 @@ class RaceTraceGPS extends HTMLElement {
     this.timing.samples.length,this.timing.samples.at(-1)?.timestamp].join(':');
    if(!this.processed||this.processedKey!==key){
     this.processedKey=key;
-    const sourceClock=this.timing.samples.length>0&&this.timing.samples.every(s=>Number.isFinite(s.session_timestamp));
    this.processed=(()=>{
    const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
    const geometry=RaceTraceCircuit.prepare(points);
