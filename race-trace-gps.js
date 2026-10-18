@@ -1150,37 +1150,7 @@ class RaceTraceGPS extends HTMLElement {
     ctx.stroke();
 
    }
-   // Label the latest visible point of each solid trace, with its TLA.
-   // Place labels after strokes so they remain legible over the lines.
-   ctx.save();ctx.font='bold 9px system-ui';ctx.textBaseline='middle';
-   const labelBoxes=[];
-   for(const [id,points] of displaySeries){
-    if(this.hiddenDrivers.has(id))continue;
-    const visible=points.filter(p=>p[0]>=view.xMin&&p[0]<=view.xMax);
-    if(!visible.length)continue;
-    const end=visible.at(-1),px=x(end[0]),py=y(end[1]);
-    if(py<18||py>h-30)continue;
-    const meta=driverMeta.get(id)||{};
-    const label=String(meta.tla||meta.abbreviation||meta.name||'#'+id).slice(0,3).toUpperCase();
-    const width=ctx.measureText(label).width+6,height=12;
-    // Keep the label at the trace's Y coordinate; stagger along X only.
-    // Try progressively further right, then left when near the edge.
-    let lx=Math.min(w-width-3,px+4),found=false;
-    const offsets=[0,1,2,3,4,5,-1,-2,-3,-4,-5,-6];
-    for(const step of offsets){
-     const candidate=px+4+step*(width+3);
-     if(candidate<53||candidate+width>w-3)continue;
-     if(labelBoxes.every(box=>candidate+width+2<box.x||candidate>box.x+box.w+2||
-        py+height/2+1<box.y||py-height/2-1>box.y+box.h)){
-      lx=candidate;found=true;break;
-     }
-    }
-    if(!found)lx=Math.max(53,Math.min(w-width-3,lx));
-    labelBoxes.push({x:lx,y:py-height/2,w:width,h:height});
-    ctx.fillStyle='#0b1220';ctx.fillRect(lx,py-height/2,width,height);
-    ctx.fillStyle=colours.get(id)||'#fff';ctx.fillText(label,lx+3,py);
-   }
-   ctx.restore();
+
    // Both projections are time shifts at the same race distance:
    // +loss: where the selected driver emerges after stopping;
    // -loss: the symmetric boundary for a rival stopping behind them.
