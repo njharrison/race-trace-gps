@@ -796,13 +796,13 @@ class RaceTraceGPS extends HTMLElement {
     profiledTraces.set(id,shaped);
    }
     return {traces,driverProfiles,correctedTraces,profiledTraces,profiledDrivers,profiledPoints,profileCounts,correctedAnchors,correctedDrivers,projectionStats,events,aligned,referenceId,ref,markers,stopped,
-      selected,typical,learned,cleanLaps,provisional};
+      selected,typical,learned,cleanLaps,provisional,raceStartDistance};
     })();
    }
    // Older cached preprocessing results may predate the driver profile field.
    if(!this.processed.driverProfiles){this.processed=null;this.processedKey=null;return this.draw();}
    const {traces,driverProfiles,correctedTraces,profiledTraces,profiledDrivers,profiledPoints,profileCounts,correctedAnchors,correctedDrivers,projectionStats,events,aligned,referenceId,ref,markers,stopped,
-    selected,typical,learned,cleanLaps,provisional}=this.processed;
+    selected,typical,learned,cleanLaps,provisional,raceStartDistance}=this.processed;
    // Independent validation: compare interpolated GPS crossing times with
    // official lap-transition timestamps at the same finish-line distance.
    // This does not modify the graph or the reference-lap adjustment.
