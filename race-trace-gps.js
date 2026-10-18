@@ -578,6 +578,16 @@ class RaceTraceGPS extends HTMLElement {
     if(isFlagMessage(text)&&Number.isFinite(sample.timestamp))
      flagTimes.push(sample.timestamp);
    }
+   // Some recorder versions expose the end-of-session state instead of
+   // a race-control message. Accept explicit finished/chequered status,
+   // but never infer the flag from an ordinary green-track sample.
+   for(const sample of this.timing.samples){
+    if(!Number.isFinite(sample.timestamp))continue;
+    if([sample.session_status,sample.session_state,sample.race_status,
+         sample.sessionStatus,sample.raceStatus].some(v=>
+       /^(FINISHED|FINISH|ENDED|COMPLETE|COMPLETED|CHEQUERED|CHECKERED)$/i.test(String(v??''))))
+      flagTimes.push(sample.timestamp);
+   }
    if(flagTimes.length){
     const flagTime=Math.min(...flagTimes);
     // Each driver finishes at their OWN first S/F crossing after the
