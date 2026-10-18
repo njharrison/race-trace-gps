@@ -854,6 +854,76 @@ class RaceTraceGPS extends HTMLElement {
    const series=new Map(),sigma=this.smoothingSeconds/2;
    const origin=Number.isFinite(originTime)?originTime:ref[0][2];
    const referenceSeconds=(Number.isFinite(typical)?typical:100)+referenceAdjustment;
+   // SC/VSC reference correction. Integrate the leader's observed GPS
+   // slowdown relative to the ordinary racing reference, beginning at the
+   // neutralisation's first recorded position. The offset is retained after
+   // green so there is no discontinuity in the gap chart.
+   const neutralPeriods=[];
+   let neutral=null;
+   const neutralType=value=>{
+    const s=String(value??'').trim().toUpperCase();
+    if(!s)return undefined;
+    if(/^(VSC|VIRTUAL SAFETY CAR|VIRTUAL SAFETY CAR DEPLOYED)$/.test(s))return 'VSC';
+    if(/^(SC|SAFETY CAR|SAFETY CAR DEPLOYED)$/.test(s))return 'SC';
+    if(/^(1|GREEN|CLEAR|ALL CLEAR|NORMAL)$/.test(s))return null;
+    return undefined;
+   };
+   for(const sample of this.timing.samples){
+    const type=neutralType(sample.track_status);
+    if(type===undefined||!Number.isFinite(sample.timestamp))continue;
+    if(type!==neutral?.type){
+     if(neutral){neutral.end=sample.timestamp;neutralPeriods.push(neutral);}
+     neutral=type?{type,start:sample.timestamp,end:Infinity}:null;
+    }
+   }
+   if(neutral)neutralPeriods.push(neutral);
+   const refTimeAtDistance=d=>{
+    if(d<ref[0][1]||d>ref.at(-1)[1])return null;
+    let lo=0,hi=ref.length-1;
+    while(hi-lo>1){const m=(lo+hi)>>1;if(ref[m][1]<d)lo=m;else hi=m;}
+    const span=ref[hi][1]-ref[lo][1];
+    return span>0?ref[lo][2]+(d-ref[lo][1])/span*(ref[hi][2]-ref[lo][2]):null;
+   };
+   const refDistanceAtTimestamp=t=>{
+    if(t<=ref[0][2])return ref[0][1];
+    if(t>=ref.at(-1)[2])return ref.at(-1)[1];
+    let lo=0,hi=ref.length-1;
+    while(hi-lo>1){const m=(lo+hi)>>1;if(ref[m][2]<t)lo=m;else hi=m;}
+    const span=ref[hi][2]-ref[lo][2];
+    return span>0?ref[lo][1]+(t-ref[lo][2])/span*(ref[hi][1]-ref[lo][1]):null;
+   };
+   const racingRefAt=d=>{
+    const lap=Math.floor(d),fraction=d-lap;
+    const q=fraction*100,j=Math.min(99,Math.floor(q)),f=q-j;
+    const progress=sharedProfile?sharedProfile[j]*(1-f)+sharedProfile[j+1]*f:fraction;
+    return origin+(lap+progress-1)*referenceSeconds;
+   };
+   const neutralSegments=[];
+   let cumulative=0;
+   for(const p of neutralPeriods){
+    if(p.start>ref.at(-1)[2])break;
+    const from=refDistanceAtTimestamp(p.start);
+    const to=refDistanceAtTimestamp(Math.min(p.end,ref.at(-1)[2]));
+    if(to<=from)continue;
+    const t0=refTimeAtDistance(from),t1=refTimeAtDistance(to);
+    if(!Number.isFinite(t0)||!Number.isFinite(t1))continue;
+    const delta=(t1-t0)-(racingRefAt(to)-racingRefAt(from));
+    neutralSegments.push({from,to,before:cumulative,delta,t0});
+    cumulative+=delta;
+   }
+   const neutralOffsetAt=d=>{
+    let offset=0;
+    for(const seg of neutralSegments){
+     if(d<=seg.from)break;
+     if(d>=seg.to){offset=seg.before+seg.delta;continue;}
+     const actual=refTimeAtDistance(d);
+     if(!Number.isFinite(actual))return seg.before;
+     return seg.before+(actual-seg.t0)-
+      (racingRefAt(d)-racingRefAt(seg.from));
+    }
+    return offset;
+   };
+
    for(const [id,track] of traces){
     if(track.length<2)continue;
     const profile=this.useDriverProfiles?(profiles.get(id)||sharedProfile):sharedProfile;
@@ -867,7 +937,7 @@ class RaceTraceGPS extends HTMLElement {
      }
      const d=p[1],lap=Math.floor(d),fraction=d-lap;
      const progress=profile?profileEval(profile,fraction):fraction;
-     const referenceTime=origin+(lap+progress-1)*referenceSeconds;
+     const referenceTime=origin+(lap+progress-1)*referenceSeconds+neutralOffsetAt(d);
      segment.push({d,t:p[2],raw:referenceTime-p[2]});
      prev=p;
     }
