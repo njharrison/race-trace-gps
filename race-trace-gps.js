@@ -162,7 +162,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceOffi
 class RaceTraceGPS extends HTMLElement {
  constructor(){
   super();this.attachShadow({mode:'open'});this.gps=null;this.timing=null;
-  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.vscPitManual=null;this.pitEnabled=true;this.smoothingSeconds=5;this.viewport=null;this.referenceLapAdjustment=0;this.drag=null;this.applyTimingCorrections=false;this.useDriverProfiles=true;this.hoverPoint=null;this.hoverSeries=null;this.gpsProjectionCache=new Map();this.lapProfileCache=new Map();
+  this.busy=false;this.lastRefresh=0;this.timer=null;this.error='';this.hiddenDrivers=new Set();this.referenceMode='learned';this.lastRender=null;this.pitDriver='44';this.pitManual=null;this.vscPitManual=null;this.pitEnabled=true;this.smoothingSeconds=5;this.viewport=null;this.referenceLapAdjustment=0;this.fuelEffect=0.03;this.drag=null;this.applyTimingCorrections=false;this.useDriverProfiles=true;this.hoverPoint=null;this.hoverSeries=null;this.gpsProjectionCache=new Map();this.lapProfileCache=new Map();
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
@@ -245,7 +245,7 @@ class RaceTraceGPS extends HTMLElement {
  draw(){
   if(!this.shadowRoot||!this.config)return;
   if(!this.shadowRoot.querySelector('canvas')){
-   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:460px;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button,.controls input{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.pit{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;font:12px system-ui}.pit input{width:75px}.smooth input{width:125px;vertical-align:middle}.smooth{font:12px system-ui}.pitlog{font:12px system-ui;margin:5px 0;color:var(--secondary-text-color,#aab)}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer} .legend button.off{opacity:.35}.trace-tooltip{position:absolute;pointer-events:none;z-index:5;display:none;background:#101827f2;color:#f8fafc;border:1px solid #64748b;border-radius:7px;padding:8px 10px;font:12px system-ui;box-shadow:0 4px 16px #0008;white-space:nowrap}.trace-tooltip strong{display:block;font-size:13px;margin-bottom:4px}.trace-container{position:relative}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="resetview">Reset view</button><label><input type="checkbox" id="timingcorrections"> Timing anchors</label><label><input type="checkbox" id="driverprofiles" checked> Driver profiles (experimental)</label><span id="refshift"></span><label class="smooth">Smoothing <input id="smoothing" type="range" min="0" max="10" step="1" value="5"> <span id="smoothingvalue">5s</span></label></div><div class="pit"><label><input type="checkbox" id="pitshow" checked> Pit projections</label><label>Driver <select id="pitdriver"></select></label><label>Pit loss <input id="pitloss" type="number" min="0" max="180" step="0.1" placeholder="—"> s</label><button id="pitreset" disabled>Calculating…</button><label>VSC pit loss <input id="vscpitloss" type="number" min="0" max="180" step="0.1" value="15"> s</label><button id="vscpitreset">Use estimate 15s</button></div><div class="pitlog" id="pitlog"></div><div class="trace-container"><canvas></canvas><div class="trace-tooltip" id="trace-tooltip"></div></div><div class="legend" id="legend"></div></ha-card>';
+   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:460px;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button,.controls input{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.pit{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;font:12px system-ui}.pit input{width:75px}.smooth input{width:125px;vertical-align:middle}.smooth{font:12px system-ui}.pitlog{font:12px system-ui;margin:5px 0;color:var(--secondary-text-color,#aab)}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer} .legend button.off{opacity:.35}.trace-tooltip{position:absolute;pointer-events:none;z-index:5;display:none;background:#101827f2;color:#f8fafc;border:1px solid #64748b;border-radius:7px;padding:8px 10px;font:12px system-ui;box-shadow:0 4px 16px #0008;white-space:nowrap}.trace-tooltip strong{display:block;font-size:13px;margin-bottom:4px}.trace-container{position:relative}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="resetview">Reset view</button><label><input type="checkbox" id="timingcorrections"> Timing anchors</label><label><input type="checkbox" id="driverprofiles" checked> Driver profiles (experimental)</label><span id="refshift"></span><label>Fuel effect <input id="fueleffect" type="number" min="0" max="0.2" step="0.005" value="0.030" style="width:65px"> s/lap/kg</label><label class="smooth">Smoothing <input id="smoothing" type="range" min="0" max="10" step="1" value="5"> <span id="smoothingvalue">5s</span></label></div><div class="pit"><label><input type="checkbox" id="pitshow" checked> Pit projections</label><label>Driver <select id="pitdriver"></select></label><label>Pit loss <input id="pitloss" type="number" min="0" max="180" step="0.1" placeholder="—"> s</label><button id="pitreset" disabled>Calculating…</button><label>VSC pit loss <input id="vscpitloss" type="number" min="0" max="180" step="0.1" value="15"> s</label><button id="vscpitreset">Use estimate 15s</button></div><div class="pitlog" id="pitlog"></div><div class="trace-container"><canvas></canvas><div class="trace-tooltip" id="trace-tooltip"></div></div><div class="legend" id="legend"></div></ha-card>';
   }
   const status=this.shadowRoot.querySelector('#status'),canvas=this.shadowRoot.querySelector('canvas');
   canvas.style.height=Math.max(180,Number(this.config.height)||460)+'px';
@@ -268,6 +268,15 @@ class RaceTraceGPS extends HTMLElement {
   this.canvasScale=dpr;
   this.canvasWidth=cssWidth;this.canvasHeight=cssHeight;
 
+  const fuelInput=this.shadowRoot.querySelector('#fueleffect');
+  fuelInput.value=this.fuelEffect.toFixed(3);
+  fuelInput.onchange=()=>{
+   const value=Number(fuelInput.value);
+   if(!Number.isFinite(value)||value<0||value>0.2){fuelInput.value=this.fuelEffect.toFixed(3);return;}
+   this.fuelEffect=value;
+   this.renderSeriesKey=null;
+   this.draw();
+  };
   const refSelect=this.shadowRoot.querySelector('#reference');
   refSelect.value=this.referenceMode;
   const timingToggle=this.shadowRoot.querySelector('#timingcorrections');
@@ -1039,6 +1048,16 @@ class RaceTraceGPS extends HTMLElement {
    const series=new Map(),sigma=this.smoothingSeconds/2;
    const origin=Number.isFinite(originTime)?originTime:ref[0][2];
    const referenceSeconds=(Number.isFinite(typical)?typical:100)+referenceAdjustment;
+   // Fuel load declines approximately linearly. Integrating the lap-time
+   // improvement gives a quadratic correction to the reference clock.
+   const meta=this.timing.metadata||this.timing.meta||this.gps.metadata||{};
+   const declaredLaps=Number(meta.total_laps??meta.race_laps??meta.laps??meta.number_of_laps??this.timing.total_laps??this.timing.race_laps);
+   const raceLaps=Number.isFinite(declaredLaps)&&declaredLaps>0?declaredLaps:Math.max(1,Math.round(ref.at(-1)[1]-raceStartDistance+1));
+   const fuelGainPerLap=100*this.fuelEffect/raceLaps;
+   const fuelClockCorrection=d=>{
+    const elapsed=Math.max(0,d-raceStartDistance+1);
+    return -fuelGainPerLap*elapsed*elapsed/2;
+   };
    this.lastReferenceBase=Number.isFinite(typical)?typical:100;
    // SC/VSC reference correction. Integrate the leader's observed GPS
    // slowdown relative to the ordinary racing reference, beginning at the
@@ -1082,7 +1101,7 @@ class RaceTraceGPS extends HTMLElement {
     const lap=Math.floor(d),fraction=d-lap;
     const q=fraction*100,j=Math.min(99,Math.floor(q)),f=q-j;
     const progress=sharedProfile?sharedProfile[j]*(1-f)+sharedProfile[j+1]*f:fraction;
-    return origin+(lap+progress-raceStartDistance)*referenceSeconds;
+    return origin+(lap+progress-raceStartDistance)*referenceSeconds+fuelClockCorrection(d);
    };
    // Build an independent neutralised-pace clock from several circulating
    // cars at equal distance. Do not use the leader alone: a leader pit stop
@@ -1160,7 +1179,7 @@ class RaceTraceGPS extends HTMLElement {
      }
      const d=p[1],lap=Math.floor(d),fraction=d-lap;
      const progress=profile?profileEval(profile,fraction):fraction;
-     const referenceTime=origin+(lap+progress-raceStartDistance)*referenceSeconds+neutralOffsetAt(d);
+     const referenceTime=origin+(lap+progress-raceStartDistance)*referenceSeconds+fuelClockCorrection(d)+neutralOffsetAt(d);
      segment.push({d,t:p[2],raw:referenceTime-p[2]});
      prev=p;
     }
@@ -1291,7 +1310,7 @@ class RaceTraceGPS extends HTMLElement {
    // pit detection, but draw older laps at ~10-20 points/lap. Preserve
    // local extrema to avoid hiding pit entries or meaningful gap changes.
    // Cache until a new recording snapshot arrives; panning never resamples.
-   if(this.renderSeriesKey!==this.processedKey+':'+this.referenceLapAdjustment+':'+this.referenceMode+':'+this.useDriverProfiles+':'+this.applyTimingCorrections+':'+this.smoothingSeconds||!this.renderSeries){
+   if(this.renderSeriesKey!==this.processedKey+':'+this.referenceLapAdjustment+':'+this.fuelEffect+':'+this.referenceMode+':'+this.useDriverProfiles+':'+this.applyTimingCorrections+':'+this.smoothingSeconds||!this.renderSeries){
     const maxDistance=Math.max(...[...series.values()].map(points=>points.at(-1)?.[0]??0));
     const recentFrom=maxDistance-2;
     const decimate=points=>{
@@ -1326,7 +1345,7 @@ class RaceTraceGPS extends HTMLElement {
      return out;
     };
     this.renderSeries=new Map([...series].map(([id,points])=>[id,decimate(points)]));
-    this.renderSeriesKey=this.processedKey+':'+this.referenceLapAdjustment+':'+this.referenceMode+':'+this.useDriverProfiles+':'+this.applyTimingCorrections+':'+this.smoothingSeconds;
+    this.renderSeriesKey=this.processedKey+':'+this.referenceLapAdjustment+':'+this.fuelEffect+':'+this.referenceMode+':'+this.useDriverProfiles+':'+this.applyTimingCorrections+':'+this.smoothingSeconds;
    }
    const displaySeries=this.renderSeries;
    let minX=Infinity,maxX=-Infinity,pointCount=0;
