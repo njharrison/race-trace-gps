@@ -1413,6 +1413,7 @@ class RaceTraceGPS extends HTMLElement {
    }
    // Neutralisation periods from recorded track status; status changes are
    // authoritative and must not be inferred from a driver's speed alone.
+   const sourceClock=this.timing.samples.length>0&&this.timing.samples.every(s=>Number.isFinite(s.session_timestamp));
    const periods=[];
    let active=null;
    // A sparse timing sample may omit track_status entirely. Missing data
