@@ -187,7 +187,7 @@ class RaceTraceGPS extends HTMLElement {
     const previous=this.timing;
     if(previous){
      const deltaUrl=this.config.timing_delta_url||
-      this.config.timing_url.replace(/\\.json(?=\\?|$)/,'-delta.json');
+      this.config.timing_url.replace(/\.json(?=\?|$)/,'-delta.json');
      if(deltaUrl!==this.config.timing_url)try{
       const delta=await loadJson(deltaUrl);
       const count=previous.samples.length,events=(previous.race_control||[]).length;
