@@ -299,8 +299,9 @@ class RaceTraceGPS extends HTMLElement {
       if(lapShift&&!Number.isFinite(this.hoverSeries.lapSeconds))continue;
       for(let j=1;j<points.length;j++){
        const a=points[j-1],b=points[j];
-       const ax=x(a[0]+lapShift),ay=y(a[1]+(lapShift*this.hoverSeries.lapSeconds));
-       const bx=x(b[0]+lapShift),by=y(b[1]+(lapShift*this.hoverSeries.lapSeconds));
+       const shiftSeconds=lapShift===0?0:lapShift*this.hoverSeries.lapSeconds;
+       const ax=x(a[0]+lapShift),ay=y(a[1]+shiftSeconds);
+       const bx=x(b[0]+lapShift),by=y(b[1]+shiftSeconds);
       if(Math.max(ax,bx)<mx-12||Math.min(ax,bx)>mx+12)continue;
       const dx=bx-ax,dy=by-ay,len=dx*dx+dy*dy;
       const t=len?Math.max(0,Math.min(1,((mx-ax)*dx+(my-ay)*dy)/len)):0;
@@ -1260,7 +1261,7 @@ class RaceTraceGPS extends HTMLElement {
    const lapSeconds=referenceSeconds;
    // Dashed lapped-car overlays use the same geometry as the solid lines,
    // shifted by +1 lap and +1 reference lap time.
-   if(this.hoverSeries)this.hoverSeries.lapSeconds=lapSeconds;
+   // Tooltip data is assigned later, after driver metadata is assembled.
    ctx.save();ctx.beginPath();ctx.rect(52,15,w-70,h-47);ctx.clip();
    // A time interval maps to diagonal boundaries in gap/distance space.
    for(const p of periods){
