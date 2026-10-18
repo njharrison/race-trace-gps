@@ -31,9 +31,8 @@ root.RaceTraceCircuit=Object.freeze({prepare,project,phase});
 if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceCircuit;
 })(typeof globalThis!=='undefined'?globalThis:this);
 
-/* Convert the HA timing recorder's completed-lap counters into
- * lap-crossing events in the same wall-clock domain as GPS recorded_at.
- * Do not confuse GPS timestamp (race replay clock) with recorded_at.
+/* Align timing and GPS using the original F1 session clock when recorded.
+ * Legacy recordings without session timestamps retain wall-clock fallback.
  */
 (function(root){
 'use strict';
@@ -41,23 +40,24 @@ function crossings(recording){
  if(recording?.schema_version!==1||!Array.isArray(recording.samples))throw Error('Invalid timing recording');
  const previous=new Map(),events=[];
  for(const sample of recording.samples){
-  if(!Number.isFinite(sample.timestamp))continue;
+  const clock=Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp;
+  if(!Number.isFinite(clock))continue;
   for(const driver of sample.drivers||[]){
    const id=String(driver.id??'');
    const lap=driver.completed_laps;
    if(!id||!Number.isInteger(lap))continue;
    const prior=previous.get(id);
    if(prior!==undefined&&lap>prior&&lap-prior===1)
-    events.push([id,lap,sample.timestamp]);
+    events.push([id,lap,clock]);
    previous.set(id,lap);
   }
  }
  return events;
 }
-function gpsFrames(recording){
+function gpsFrames(recording,sourceClock=false){
  if(recording?.schema_version!==1||!Array.isArray(recording.samples))throw Error('Invalid GPS recording');
- return recording.samples.filter(s=>Number.isFinite(s.recorded_at)).map(s=>({
-  t:s.recorded_at,
+ return recording.samples.filter(s=>Number.isFinite(sourceClock?s.timestamp:s.recorded_at)).map(s=>({
+  t:sourceClock?s.timestamp:s.recorded_at,
   d:(s.drivers||[]).filter(d=>d&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&!(d.x===0&&d.y===0))
     .map(d=>[String(d.id),d.x,d.y])
  }));
@@ -465,7 +465,8 @@ class RaceTraceGPS extends HTMLElement {
     this.processed=(()=>{
    const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
    const geometry=RaceTraceCircuit.prepare(points);
-   const frames=RaceTraceRecordingSync.gpsFrames(this.gps);
+   const sourceClock=this.timing.samples.some(s=>Number.isFinite(s.session_timestamp));
+   const frames=RaceTraceRecordingSync.gpsFrames(this.gps,sourceClock);
    const events=RaceTraceRecordingSync.crossings(this.timing).filter(e=>e[1]>=2);
    let calibration=null,provisional=true;
    if(events.length){
@@ -574,7 +575,7 @@ class RaceTraceGPS extends HTMLElement {
      const id=String(d.id??d.racing_number??'');
      if(!id||retirementAt.has(id))continue;
      if(d.retired===true||[d.status,d.driver_status,d.race_status,d.gap,d.gap_to_leader].some(retiredStatus))
-      retirementAt.set(id,Number(sample.timestamp));
+      retirementAt.set(id,Number(sampleClock));
     }
    }
    // Finish-line clipping is per driver, not at the leader's flag time.
@@ -583,7 +584,8 @@ class RaceTraceGPS extends HTMLElement {
    const finishAt=new Map();
    const finishStatus=v=>/^(FINISHED|FINISH|CLASSIFIED|CHEQUERED|CHECKERED)$/i.test(String(v??'').trim());
    for(const sample of this.timing.samples){
-    if(!Number.isFinite(sample.timestamp))continue;
+    const sampleClock=Number.isFinite(sample.session_timestamp)?sample.session_timestamp:sample.timestamp;
+    if(!Number.isFinite(sampleClock))continue;
     for(const d of sample.drivers||[]){
      const id=String(d.id??d.racing_number??'');
      if(!id||finishAt.has(id)||retirementAt.has(id))continue;
@@ -606,7 +608,7 @@ class RaceTraceGPS extends HTMLElement {
      ...(Array.isArray(sample.race_control_messages)?sample.race_control_messages.map(e=>
       typeof e==='string'?e:e.message??e.text??''):[])].join(' ');
     if(isFlagMessage(text)&&Number.isFinite(sample.timestamp))
-     flagTimes.push(sample.timestamp);
+     flagTimes.push(sampleClock);
    }
    // Some recorder versions expose the end-of-session state instead of
    // a race-control message. Accept explicit finished/chequered status,
@@ -616,7 +618,7 @@ class RaceTraceGPS extends HTMLElement {
     if([sample.session_status,sample.session_state,sample.race_status,
          sample.sessionStatus,sample.raceStatus].some(v=>
        /^(FINISHED|FINISH|ENDED|COMPLETE|COMPLETED|CHEQUERED|CHECKERED)$/i.test(String(v??''))))
-      flagTimes.push(sample.timestamp);
+      flagTimes.push(sampleClock);
    }
    if(flagTimes.length){
     const flagTime=Math.min(...flagTimes);
@@ -762,8 +764,8 @@ class RaceTraceGPS extends HTMLElement {
    for(const sample of this.timing.samples){
     for(const field of [sample.race_control_messages,sample.race_control,
       sample.messages,sample.race_control_message,sample.message]){
-     if(Array.isArray(field))for(const item of field)collectStart(item,sample.timestamp);
-     else collectStart(field,sample.timestamp);
+     if(Array.isArray(field))for(const item of field)collectStart(item,sampleClock);
+     else collectStart(field,sampleClock);
     }
    }
    const officialStart=startMessages.length?Math.min(...startMessages):null;
