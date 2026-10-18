@@ -916,11 +916,12 @@ class RaceTraceGPS extends HTMLElement {
     }
     if(values.length<3)return null;
     values.sort((a,b)=>a-b);
-    // Fastest half removes pit-lane/garage delays and cars slowing much
-    // more than the pack, without following one potentially pitting leader.
-    const count=Math.max(2,Math.ceil(values.length/2));
-    const normal=values.slice(0,count);
-    return normal[Math.floor(normal.length/2)];
+    // Use the field median, not the fastest half. Under SC/VSC the
+    // faster cars bias the reference towards racing pace and make every
+    // trace slope downwards. A median is resistant to isolated pit stops
+    // without systematically choosing the quickest circulating cars.
+    const middle=Math.floor(values.length/2);
+    return values.length%2?values[middle]:(values[middle-1]+values[middle])/2;
    };
    for(const p of neutralPeriods){
     if(p.start>ref.at(-1)[2])break;
