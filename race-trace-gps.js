@@ -32,7 +32,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports=root.RaceTraceCirc
 })(typeof globalThis!=='undefined'?globalThis:this);
 
 /* Align timing and GPS using the original F1 session clock when recorded.
- * Legacy recordings without session timestamps retain wall-clock fallback.
+ * Samples without original F1 timestamps are excluded from calculations.
  */
 (function(root){
 'use strict';
@@ -657,7 +657,7 @@ class RaceTraceGPS extends HTMLElement {
    }
    const flagTimes=[];
    const isFlagMessage=v=>/CHE(?:QU|CK)ERED FLAG|CHE(?:QU|CK)ERED|RACE FINISHED|END OF RACE/i.test(String(v??''));
-   for(const e of (sourceClock?[]:this.timing.race_control||[])){
+   for(const e of (this.timing.race_control||[])){
     if(isFlagMessage(e.message??e.text??e.description??'')||
        /CHE(?:QU|CK)ERED/i.test(String(e.flag??e.flag_type??''))){
      const t=e.utc?Date.parse(e.utc)/1000:NaN;
@@ -822,7 +822,7 @@ class RaceTraceGPS extends HTMLElement {
     const t=typeof raw==='number'?raw:Number(raw);
     if(Number.isFinite(t))startMessages.push(t);
    };
-   for(const event of (sourceClock?[]:this.timing.race_control||[]))collectStart(event,null);
+   for(const event of (this.timing.race_control||[]))collectStart(event,null);
    for(const sample of this.timing.samples){
     const sampleClock=sample.session_timestamp;
     for(const field of [sample.race_control_messages,sample.race_control,
