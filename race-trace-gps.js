@@ -484,10 +484,10 @@ class RaceTraceGPS extends HTMLElement {
     this.timing.samples.length,this.timing.samples.at(-1)?.timestamp].join(':');
    if(!this.processed||this.processedKey!==key){
     this.processedKey=key;
-    this.processed=(()=>{
+    const sourceClock=this.timing.samples.length>0&&this.timing.samples.every(s=>Number.isFinite(s.session_timestamp));
+   this.processed=(()=>{
    const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
    const geometry=RaceTraceCircuit.prepare(points);
-   const sourceClock=this.timing.samples.length>0&&this.timing.samples.every(s=>Number.isFinite(s.session_timestamp));
    const frames=RaceTraceRecordingSync.gpsFrames(this.gps,sourceClock);
    const events=RaceTraceRecordingSync.crossings(this.timing).filter(e=>e[1]>=2);
    let calibration=null,provisional=true;
@@ -1413,7 +1413,6 @@ class RaceTraceGPS extends HTMLElement {
    }
    // Neutralisation periods from recorded track status; status changes are
    // authoritative and must not be inferred from a driver's speed alone.
-   const sourceClock=this.timing.samples.length>0&&this.timing.samples.every(s=>Number.isFinite(s.session_timestamp));
    const periods=[];
    let active=null;
    // A sparse timing sample may omit track_status entirely. Missing data
