@@ -1351,7 +1351,9 @@ class RaceTraceGPS extends HTMLElement {
    ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.font='12px system-ui';
    for(let lap=Math.ceil(view.xMin);lap<=view.xMax;lap++){
     ctx.beginPath();ctx.moveTo(x(lap),15);ctx.lineTo(x(lap),h-32);ctx.stroke();
-    ctx.fillStyle='#aab';ctx.fillText(String(lap),x(lap)+3,h-12);
+    ctx.fillStyle='#aab';// GPS alignment places the completion of official lap N at x=N-1.
+    // Label the crossing with its official completed-lap number.
+    ctx.fillText(String(lap+1),x(lap)+3,h-12);
    }
    const gapStep=Math.max(1,Math.ceil((view.yMax-view.yMin)/8));
    for(let g=Math.ceil(view.yMin/gapStep)*gapStep;g<=view.yMax;g+=gapStep){
