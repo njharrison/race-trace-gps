@@ -601,6 +601,30 @@ class RaceTraceGPS extends HTMLElement {
      finishAt.set(id,{time:t,lap,source:'flag crossing'});
     }
    }
+   // GPS finish fallback: official completed-lap transitions can stop
+   // updating at the flag. Find each car's first S/F distance crossing
+   // at or just after the chequered flag, using its own GPS trajectory.
+   if(flagTimes.length){
+    const flagTime=Math.min(...flagTimes);
+    for(const [id,track] of traces){
+     if(retirementAt.has(id)||track.length<2)continue;
+     // A crossing just before the race-control event is still the finish
+     // for the winner: flag publication may lag the physical line.
+     let crossing=null;
+     for(let i=1;i<track.length;i++){
+      const a=track[i-1],b=track[i];
+      if(b[1]<=a[1]||b[2]<=a[2])continue;
+      const first=Math.floor(a[1])+1;
+      if(first>b[1]||b[1]-a[1]>.25)continue;
+      const t=a[2]+(first-a[1])/(b[1]-a[1])*(b[2]-a[2]);
+      if(t>=flagTime-5){crossing={time:t,source:'GPS finish crossing'};break;}
+     }
+     const current=finishAt.get(id);
+     if(crossing&&(!current||current.source!=='flag crossing'||
+        Math.abs(current.time-crossing.time)>8))
+      finishAt.set(id,crossing);
+    }
+   }
    const markers=new Map();
    let stopped=0;
    const gpsByDriver=new Map();
@@ -1305,7 +1329,7 @@ class RaceTraceGPS extends HTMLElement {
    ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.font='12px system-ui';
    for(let lap=Math.ceil(view.xMin);lap<=view.xMax;lap++){
     ctx.beginPath();ctx.moveTo(x(lap),15);ctx.lineTo(x(lap),h-32);ctx.stroke();
-    ctx.fillStyle='#aab';ctx.fillText('Lap '+lap,x(lap)+3,h-12);
+    ctx.fillStyle='#aab';ctx.fillText(String(lap),x(lap)+3,h-12);
    }
    const gapStep=Math.max(1,Math.ceil((view.yMax-view.yMin)/8));
    for(let g=Math.ceil(view.yMin/gapStep)*gapStep;g<=view.yMax;g+=gapStep){
