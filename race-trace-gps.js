@@ -805,7 +805,7 @@ class RaceTraceGPS extends HTMLElement {
    const referenceAdjustment=this.referenceLapAdjustment;
    function timeAtDistance(d){
     if(useLearned&&Number.isFinite(originTime)){
-     const phase=((d-1)%1+1)%1,lap=Math.floor(d-1);
+     const phase=((d-raceStartDistance)%1+1)%1,lap=Math.floor(d-raceStartDistance);
      const q=phase*100,j=Math.min(99,Math.floor(q)),f=q-j;
      return originTime+(lap+learned[j]*(1-f)+learned[j+1]*f)*(typical+referenceAdjustment);
     }
@@ -901,7 +901,7 @@ class RaceTraceGPS extends HTMLElement {
     const lap=Math.floor(d),fraction=d-lap;
     const q=fraction*100,j=Math.min(99,Math.floor(q)),f=q-j;
     const progress=sharedProfile?sharedProfile[j]*(1-f)+sharedProfile[j+1]*f:fraction;
-    return origin+(lap+progress-1)*referenceSeconds;
+    return origin+(lap+progress-raceStartDistance)*referenceSeconds;
    };
    // Build an independent neutralised-pace clock from several circulating
    // cars at equal distance. Do not use the leader alone: a leader pit stop
@@ -976,7 +976,7 @@ class RaceTraceGPS extends HTMLElement {
      }
      const d=p[1],lap=Math.floor(d),fraction=d-lap;
      const progress=profile?profileEval(profile,fraction):fraction;
-     const referenceTime=origin+(lap+progress-1)*referenceSeconds+neutralOffsetAt(d);
+     const referenceTime=origin+(lap+progress-raceStartDistance)*referenceSeconds+neutralOffsetAt(d);
      segment.push({d,t:p[2],raw:referenceTime-p[2]});
      prev=p;
     }
