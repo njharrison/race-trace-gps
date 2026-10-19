@@ -145,7 +145,7 @@ function align(tracks,official,{windowSeconds=45}={}){
     const interval=b[2]-a[2];
     if(interval>windowSeconds*2)break;
     const value=a[1]+(time-a[2])/interval*(b[1]-a[1]);
-    candidates.push({lap,shift:(lap-1)-value,interval});
+    candidates.push({lap,shift:lap-value,interval});
     break;
    }
   }
@@ -883,12 +883,12 @@ class RaceTraceGPS extends HTMLElement {
     }
    }
    const officialStart=startMessages.length?Math.min(...startMessages):null;
-   let raceStartDistance=1; // Racing lap 1 spans distance 1 to 2; official completed lap 2 ends at distance 2.
+   let raceStartDistance=2; // Official lap 2 ends at distance 2; racing lap 1 occupies 0–1.
    // Official start messages are retained for diagnostics. They must not
    // shift the racing-lap axis after per-driver official alignment.
    // Retain partial and provisional drivers; lap one begins at distance zero.
    const eligible=[...traces].map(([id,v])=>[id,
-    v.filter(p=>p[1]>=raceStartDistance-1)]).filter(([,v])=>v.length>2);
+    v.filter(p=>p[1]>=0)]).filter(([,v])=>v.length>2);
    if(!eligible.length)throw Error('No usable driver trajectories');
    eligible.sort((a,b)=>b[1].at(-1)[1]-a[1].at(-1)[1]);
    const [referenceId,reference]=eligible[0];
@@ -907,7 +907,7 @@ class RaceTraceGPS extends HTMLElement {
    const liveLapKeys=new Set();
    for(const [id,track] of eligible){
     const monotone=track.filter((p,i)=>!i||p[1]>=track[i-1][1]-0.005);
-    for(let lap=Math.max(1,Math.ceil(monotone[0][1]));lap<monotone.at(-1)[1];lap++){
+    for(let lap=Math.max(0,Math.ceil(monotone[0][1]));lap<monotone.at(-1)[1];lap++){
      const cacheKey=id+':'+lap;
      liveLapKeys.add(cacheKey);
      let entry=this.lapProfileCache.get(cacheKey);
@@ -944,7 +944,7 @@ class RaceTraceGPS extends HTMLElement {
     const anchors=[];
     for(const [driver,lap,officialTime] of events){
      if(String(driver)!==String(id)||!Number.isFinite(officialTime))continue;
-     const distance=lap-1;
+     const distance=lap;
      const gpsTime=crossingAt(track,distance);
      if(!Number.isFinite(gpsTime))continue;
      const residual=officialTime-gpsTime;
@@ -981,7 +981,7 @@ class RaceTraceGPS extends HTMLElement {
    // complete clean racing lap is available. Median multiple laps later.
    for(const [id,track] of eligible){
     const samples=[];
-    const first=Math.max(1,Math.ceil(track[0][1]));
+    const first=Math.max(0,Math.ceil(track[0][1]));
     const end=Math.floor(track.at(-1)[1]);
     for(let lap=first;lap<end;lap++){
      const cached=this.lapProfileCache.get(id+':'+lap);
@@ -1019,7 +1019,7 @@ class RaceTraceGPS extends HTMLElement {
     if(!Number.isFinite(t))continue;
     const key=String(id);
     if(!officialByDriver.has(key))officialByDriver.set(key,new Map());
-    officialByDriver.get(key).set(lap-1,t);
+    officialByDriver.get(key).set(lap,t);
    }
    const profileAt=(profile,f)=>{
     const q=Math.max(0,Math.min(100,f*100));
@@ -1063,7 +1063,7 @@ class RaceTraceGPS extends HTMLElement {
    for(const [id,lap,tOfficial] of events){
     const track=traces.get(String(id));
     if(!track||!Number.isFinite(tOfficial))continue;
-    const distance=lap-1;
+    const distance=lap;
     const tGps=crossingAt(track,distance);
     if(Number.isFinite(tGps))
      crossingChecks.push({id:String(id),lap,official:tOfficial,gps:tGps,
@@ -1100,7 +1100,7 @@ class RaceTraceGPS extends HTMLElement {
    const validationSummary=this.crossingValidation;
    const useLearned=this.referenceMode==='learned'&&!!learned;
    const stableTypical=typical;
-   const firstCross=events.find(e=>String(e[0])===referenceId&&e[1]===raceStartDistance+1);
+   const firstCross=events.find(e=>String(e[0])===referenceId&&e[1]===raceStartDistance);
    const originTime=firstCross?.[2]??crossingAt(ref,raceStartDistance);
    // Normalised lap-time shape is shared by all drivers. Anchor it to
    // the reference car at its first racing lap crossing.
@@ -1168,7 +1168,7 @@ class RaceTraceGPS extends HTMLElement {
    const raceLaps=Number.isFinite(declaredLaps)&&declaredLaps>0?declaredLaps:Math.max(1,Math.round(ref.at(-1)[1]-raceStartDistance+1));
    const fuelGainPerLap=100*this.fuelEffect/raceLaps;
    const fuelClockCorrection=d=>{
-    const elapsed=Math.max(0,d-raceStartDistance+1);
+    const elapsed=Math.max(0,d);
     return -fuelGainPerLap*elapsed*elapsed/2;
    };
    this.lastReferenceBase=Number.isFinite(typical)?typical:100;
@@ -1283,10 +1283,10 @@ class RaceTraceGPS extends HTMLElement {
     const source=this.applyTimingCorrections?correctedTraces.get(id)||track:track;
     const segments=[];let segment=[],prev=null;
     for(const p of source){
-     // Official lap N finishes at GPS distance N-1. The first racing
-     // lap therefore spans [raceStartDistance-1, raceStartDistance].
+     // Official lap N finishes at GPS distance N. The first racing
+     // lap therefore spans [0,1].
      // Do not discard it: the prior threshold hid lap one entirely.
-     if(p[1]<raceStartDistance-1)continue;
+     if(p[1]<0)continue;
      if(prev&&(p[2]-prev[2]>8||p[2]<=prev[2]||Math.abs(p[1]-prev[1])>.16)){
       if(segment.length)segments.push(segment);
       segment=[];
@@ -1344,7 +1344,7 @@ class RaceTraceGPS extends HTMLElement {
    };
    for(const [id,track] of traces){
     const completed=[];
-    for(let lap=Math.max(raceStartDistance,Math.ceil(track[0][1]));lap<track.at(-1)[1];lap++){
+    for(let lap=Math.max(0,Math.ceil(track[0][1]));lap<track.at(-1)[1];lap++){
      const t0=crossingAt(track,lap),t1=crossingAt(track,lap+1);
      if(Number.isFinite(t0)&&Number.isFinite(t1)&&t1>t0)
       completed.push({lap,t0,t1,duration:t1-t0});
@@ -1519,9 +1519,9 @@ class RaceTraceGPS extends HTMLElement {
    for(let lap=Math.ceil(view.xMin);lap<=view.xMax;lap++){
     ctx.beginPath();ctx.moveTo(x(lap),15);ctx.lineTo(x(lap),h-32);ctx.stroke();
     ctx.fillStyle='#aab';
-    // Aligned racing distance 1 is the start of lap 1.
+    // Aligned racing distance 0 is the start of lap 1.
     // Keep axis labels consistent with Reset view and Live X bounds.
-    const axisLabel=String(lap+1);
+    const axisLabel=String(lap);
     ctx.fillText(axisLabel,x(lap)+3,h-12);
    }
    const gapStep=Math.max(1,Math.ceil((view.yMax-view.yMin)/8));
