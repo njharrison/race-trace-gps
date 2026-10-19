@@ -1044,6 +1044,11 @@ class RaceTraceGPS extends HTMLElement {
    // Independent validation: compare interpolated GPS crossing times with
    // official lap-transition timestamps at the same finish-line distance.
    // This does not modify the graph or the reference-lap adjustment.
+   // Crossing diagnostics depend only on preprocessed tracks and official
+   // crossings, not on viewport, smoothing or reference adjustment.
+   if(!this.crossingValidation||this.crossingValidationKey!==this.processedKey){
+    this.crossingValidationKey=this.processedKey;
+    this.crossingValidation=(()=>{
    const crossingChecks=[];
    for(const [id,lap,tOfficial] of events){
     const track=traces.get(String(id));
@@ -1079,6 +1084,10 @@ class RaceTraceGPS extends HTMLElement {
     ', reversed pairs '+orderingChecks.length+
     (orderingChecks.length?' (e.g. L'+orderingChecks[0].lap+' #'+orderingChecks[0].a+
      '/#'+orderingChecks[0].b+')':'');
+    return validationSummary;
+    })();
+   }
+   const validationSummary=this.crossingValidation;
    const useLearned=this.referenceMode==='learned'&&!!learned;
    const stableTypical=typical;
    const firstCross=events.find(e=>String(e[0])===referenceId&&e[1]===raceStartDistance+1);
