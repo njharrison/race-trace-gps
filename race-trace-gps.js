@@ -602,7 +602,13 @@ class RaceTraceGPS extends HTMLElement {
       let step=phase-prev.phase;
       if(step>.5)step-=1;
       if(step<-.5)step+=1;
-      if(step<-.03||step>=.2){
+      // A fixed 0.2-lap cutoff wrongly discards genuine progress when
+      // the original F1 position stream skips ~30 seconds (e.g. seeking).
+      // Allow proportionally more progress for longer SOURCE-time intervals.
+      // Never use recording wall time or replay state for this decision.
+      const elapsed=p.t-prev.t;
+      const maxForward=Math.min(.49,Math.max(.2,.03+.015*Math.max(0,elapsed)));
+      if(elapsed<=0||step<-.03||step>=maxForward){
        unwrapped=prev.value;accepted=false;projectionStats.rejected++;
       }else unwrapped=prev.value+step;
      }
