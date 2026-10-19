@@ -481,6 +481,9 @@ class RaceTraceGPS extends HTMLElement {
   if(!this.gps||!this.timing){status.textContent=this.error||'Waiting for GPS and timing recordings';return;}
   try{
    const sourceClock=true; // All racing calculations use original F1 timestamps.
+   // Shared by the cached projection and subsequent rendering.
+   let discontinuities=new Map();
+   const isDiscontinuous=(id,t)=>discontinuities.get(String(id))?.has(t)===true;
    function crossingAt(track,d){
     for(let i=1;i<track.length;i++){
      const a=track[i-1],b=track[i],dx=b[1]-a[1];
@@ -516,7 +519,8 @@ class RaceTraceGPS extends HTMLElement {
     allFrames.filter(f=>f.t>=raceStartTime):allFrames;
    if(!frames.length)throw Error('Waiting for GPS positions after official race start');
    // Detect physically impossible transitions in source F1 time, not replay state.
-   const discontinuities=new Map(),lastGps=new Map();
+   discontinuities=new Map();
+   const lastGps=new Map();
    for(const frame of frames)for(const [id,x,y] of frame.d){
     const prev=lastGps.get(id),dt=prev?frame.t-prev.t:0;
     if(prev&&dt>0&&Math.hypot(x-prev.x,y-prev.y)>Math.max(45,115*dt)){
@@ -525,7 +529,7 @@ class RaceTraceGPS extends HTMLElement {
     }
     lastGps.set(id,{x,y,t:frame.t});
    }
-   const isDiscontinuous=(id,t)=>discontinuities.get(String(id))?.has(t)===true;
+
    const events=RaceTraceRecordingSync.crossings(this.timing).filter(e=>e[1]>=2&&
      (!Number.isFinite(raceStartTime)||e[2]>=raceStartTime));
    let calibration=null,provisional=true;
