@@ -493,6 +493,18 @@ class RaceTraceGPS extends HTMLElement {
     }
     return null;
    }
+   // Detect physically impossible transitions in source F1 time, not replay state.
+   discontinuities=new Map();
+   const lastGps=new Map();
+   for(const frame of RaceTraceRecordingSync.gpsFrames(this.gps))for(const [id,x,y] of frame.d){
+    const prev=lastGps.get(id),dt=prev?frame.t-prev.t:0;
+    if(prev&&dt>0&&Math.hypot(x-prev.x,y-prev.y)>Math.max(45,115*dt)){
+     if(!discontinuities.has(id))discontinuities.set(id,new Set());
+     discontinuities.get(id).add(frame.t);
+    }
+    lastGps.set(id,{x,y,t:frame.t});
+   }
+
    // Heavy GPS projection, alignment and clean-lap learning are cached.
    // Viewport, reference-time adjustment and smoothing must not invalidate it.
    const key=[this.gps.samples.length,this.gps.samples.at(-1)?.timestamp,
@@ -518,18 +530,6 @@ class RaceTraceGPS extends HTMLElement {
    const frames=Number.isFinite(raceStartTime)?
     allFrames.filter(f=>f.t>=raceStartTime):allFrames;
    if(!frames.length)throw Error('Waiting for GPS positions after official race start');
-   // Detect physically impossible transitions in source F1 time, not replay state.
-   discontinuities=new Map();
-   const lastGps=new Map();
-   for(const frame of frames)for(const [id,x,y] of frame.d){
-    const prev=lastGps.get(id),dt=prev?frame.t-prev.t:0;
-    if(prev&&dt>0&&Math.hypot(x-prev.x,y-prev.y)>Math.max(45,115*dt)){
-     if(!discontinuities.has(id))discontinuities.set(id,new Set());
-     discontinuities.get(id).add(frame.t);
-    }
-    lastGps.set(id,{x,y,t:frame.t});
-   }
-
    const events=RaceTraceRecordingSync.crossings(this.timing).filter(e=>e[1]>=2&&
      (!Number.isFinite(raceStartTime)||e[2]>=raceStartTime));
    let calibration=null,provisional=true;
