@@ -284,7 +284,7 @@ class RaceTraceGPS extends HTMLElement {
  draw(){
   if(!this.shadowRoot||!this.config)return;
   if(!this.shadowRoot.querySelector('canvas')){
-   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:460px;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button,.controls input{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.pit{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;font:12px system-ui}.pit input{width:75px}.smooth input{width:125px;vertical-align:middle}.smooth{font:12px system-ui}.pitlog{font:12px system-ui;margin:5px 0;color:var(--secondary-text-color,#aab)}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer} .legend button.off{opacity:.35}.trace-tooltip{position:absolute;pointer-events:none;z-index:5;display:none;background:#101827f2;color:#f8fafc;border:1px solid #64748b;border-radius:7px;padding:8px 10px;font:12px system-ui;box-shadow:0 4px 16px #0008;white-space:nowrap}.trace-tooltip strong{display:block;font-size:13px;margin-bottom:4px}.trace-container{position:relative}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="resetview">Reset view</button><button id="liveview" aria-pressed="false">Live</button><label><input type="checkbox" id="timingcorrections"> Timing anchors</label><label><input type="checkbox" id="driverprofiles"> Driver profiles (experimental)</label><span id="refshift"></span><label>Fuel effect <input id="fueleffect" type="number" min="0" max="0.2" step="0.005" value="0.030" style="width:65px"> s/lap/kg</label><label class="smooth">Smoothing <input id="smoothing" type="range" min="0" max="10" step="1" value="5"> <span id="smoothingvalue">5s</span></label></div><div class="pit"><label><input type="checkbox" id="pitshow" checked> Pit projections</label><label>Driver <select id="pitdriver"></select></label><label>Pit loss <input id="pitloss" type="number" min="0" max="180" step="0.1" placeholder="—"> s</label><button id="pitreset" disabled>Calculating…</button><label>VSC pit loss <input id="vscpitloss" type="number" min="0" max="180" step="0.1" value="15"> s</label><button id="vscpitreset">Use estimate 15s</button></div><div class="pitlog" id="pitlog"></div><div class="trace-container"><canvas></canvas><div class="trace-tooltip" id="trace-tooltip"></div></div><div class="legend" id="legend"></div></ha-card>';
+   this.shadowRoot.innerHTML='<style>:host{display:block}ha-card{display:block;padding:16px;background:var(--ha-card-background,var(--card-background-color,#18202d));color:var(--primary-text-color,#eee)}canvas{width:100%;height:460px;display:block}p{font:12px system-ui;color:var(--secondary-text-color,#aab)}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}.controls select,.controls button,.controls input{background:#263447;color:#fff;border:1px solid #566578;border-radius:5px;padding:5px;cursor:pointer}.pit{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0;font:12px system-ui}.pit input{width:75px}.smooth input{width:125px;vertical-align:middle}.smooth{font:12px system-ui}.pitlog{font:12px system-ui;margin:5px 0;color:var(--secondary-text-color,#aab)}.legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.legend button{font:12px system-ui;border:1px solid #64748b;border-radius:5px;background:#182235;color:white;padding:3px 7px;cursor:pointer} .legend button.off{opacity:.35}.trace-tooltip{position:absolute;pointer-events:none;z-index:5;display:none;background:#101827f2;color:#f8fafc;border:1px solid #64748b;border-radius:7px;padding:8px 10px;font:12px system-ui;box-shadow:0 4px 16px #0008;white-space:nowrap}.trace-tooltip strong{display:block;font-size:13px;margin-bottom:4px}.trace-container{position:relative}</style><ha-card><h3>Race Trace GPS</h3><p id="status"></p><div class="controls"><label>Reference <select id="reference"><option value="learned">Learned clean-lap pace</option><option value="leader">Leader GPS</option></select></label><button id="resetview">Reset view</button><button id="liveview" aria-pressed="false">Live</button><label><input type="checkbox" id="timingcorrections"> Timing anchors</label><label><input type="checkbox" id="driverprofiles"> Driver profiles (experimental)</label><span id="refshift"></span><label>Fuel effect <input id="fueleffect" type="number" min="0" max="0.2" step="0.005" value="0.030" style="width:65px"> s/lap/kg</label><label class="smooth">Smoothing <input id="smoothing" type="range" min="0" max="10" step="1" value="5"> <span id="smoothingvalue">5s</span></label></div><div class="pit"><label><input type="checkbox" id="pitshow" checked> Pit projections</label><label>Driver <select id="pitdriver"></select></label><label>Pit loss <input id="pitloss" type="number" min="0" max="180" step="0.1" placeholder="—"> s</label><button id="pitreset" disabled>Calculating…</button><label>VSC pit loss <input id="vscpitloss" type="number" min="0" max="180" step="0.1" placeholder="—"> s</label><button id="vscpitreset" disabled>Calculating…</button></div><div class="pitlog" id="pitlog"></div><div class="trace-container"><canvas></canvas><div class="trace-tooltip" id="trace-tooltip"></div></div><div class="legend" id="legend"></div></ha-card>';
   }
   const status=this.shadowRoot.querySelector('#status'),canvas=this.shadowRoot.querySelector('canvas');
   canvas.style.height=Math.max(180,Number(this.config.height)||460)+'px';
@@ -1333,14 +1333,16 @@ class RaceTraceGPS extends HTMLElement {
    }
    // Pre-index neutralisation samples once; don't scan the full timing
    // archive separately for every candidate pit lap.
-   const neutralTimes=this.timing.samples
+   const neutralSamples=this.timing.samples
     .filter(s=>Number.isFinite(s.session_timestamp)&&
      /^(SC|VSC|SAFETY CAR|VIRTUAL SAFETY CAR)$/i.test(String(s.track_status||'')))
-    .map(s=>s.session_timestamp).sort((a,b)=>a-b);
-   const neutralInWindow=(start,end)=>{
-    let lo=0,hi=neutralTimes.length;
-    while(lo<hi){const mid=(lo+hi)>>1;if(neutralTimes[mid]<start)lo=mid+1;else hi=mid;}
-    return lo<neutralTimes.length&&neutralTimes[lo]<=end;
+    .map(s=>s);
+   const neutralTimes=neutralSamples.map(s=>s.session_timestamp).sort((a,b)=>a-b);
+   const vscTimes=neutralSamples.filter(s=>/^(VSC|VIRTUAL SAFETY CAR)$/i.test(String(s.track_status||''))).map(s=>s.session_timestamp).sort((a,b)=>a-b);
+   const timesInWindow=(times,start,end)=>{
+    let lo=0,hi=times.length;
+    while(lo<hi){const mid=(lo+hi)>>1;if(times[mid]<start)lo=mid+1;else hi=mid;}
+    return lo<times.length&&times[lo]<=end;
    };
    for(const [id,track] of traces){
     const completed=[];
@@ -1379,8 +1381,9 @@ class RaceTraceGPS extends HTMLElement {
      // A sparse GPS feed can miss a stationary pit-box interval.
      // Retain a slow-lap candidate without claiming it is verified.
      // Exclude stops overlapping official neutralisation periods.
-     const neutral=neutralInWindow(p.t0,p.t1);
-     pitStops.push({id,lap:p.lap,loss:slowdown,neutral,stationary,method:stationary?'GPS stop + lap-excess':'lap-excess only'});
+     const neutral=timesInWindow(neutralTimes,p.t0,p.t1);
+     const vsc=timesInWindow(vscTimes,p.t0,p.t1);
+     pitStops.push({id,lap:p.lap,loss:slowdown,neutral,vsc,stationary,method:stationary?'GPS stop + lap-excess':'lap-excess only'});
     }
    }
 
@@ -1396,6 +1399,14 @@ class RaceTraceGPS extends HTMLElement {
     return values[lo].loss*(1-f)+values[Math.min(lo+1,values.length-1)].loss*f;
    };
    const expected=quantile(validStops,.25);
+   // Estimate additional pit loss over VSC running pace, not over green pace.
+   // Require a GPS-confirmed stop; neutralisation alone is not a pit stop.
+   const vscBaseline=pitStops.filter(p=>p.vsc&&!p.stationary).map(p=>p.loss).sort((a,b)=>a-b);
+   const baseline=vscBaseline.length?vscBaseline[Math.floor(vscBaseline.length/2)]:null;
+   const validVscStops=Number.isFinite(baseline)?pitStops.filter(p=>p.vsc&&p.stationary)
+    .map(p=>({...p,loss:p.loss-baseline})).filter(p=>p.loss>=3&&p.loss<=60)
+    .sort((a,b)=>a.loss-b.loss):[];
+   const vscExpected=quantile(validVscStops,.25);
    const pitDriverSelect=this.shadowRoot.querySelector('#pitdriver');
    pitDriverSelect.replaceChildren();
    for(const id of series.keys()){
@@ -1413,14 +1424,17 @@ class RaceTraceGPS extends HTMLElement {
    const pitInput=this.shadowRoot.querySelector('#pitloss');
    const pitReset=this.shadowRoot.querySelector('#pitreset');
    const effectiveLoss=this.pitManual===null?expected:this.pitManual;
-   const vscEffectiveLoss=this.vscPitManual===null?15:this.vscPitManual;
+   const vscEffectiveLoss=this.vscPitManual===null?vscExpected:this.vscPitManual;
    const vscPitInput=this.shadowRoot.querySelector('#vscpitloss');
-   if(this.shadowRoot.activeElement!==vscPitInput)vscPitInput.value=vscEffectiveLoss.toFixed(1);
+   if(this.shadowRoot.activeElement!==vscPitInput)vscPitInput.value=Number.isFinite(vscEffectiveLoss)?vscEffectiveLoss.toFixed(1):'';
    vscPitInput.onchange=()=>{
     const v=Number(vscPitInput.value);
     if(vscPitInput.value!==''&&Number.isFinite(v)&&v>=0&&v<=180){this.vscPitManual=Math.round(v*10)/10;this.draw();}
    };
-   this.shadowRoot.querySelector('#vscpitreset').onclick=()=>{this.vscPitManual=null;this.draw();};
+   const vscReset=this.shadowRoot.querySelector('#vscpitreset');
+   vscReset.textContent=Number.isFinite(vscExpected)?'Use '+vscExpected.toFixed(1)+'s':'No VSC estimate yet';
+   vscReset.disabled=!Number.isFinite(vscExpected);
+   vscReset.onclick=()=>{this.vscPitManual=null;this.draw();};
    if(this.shadowRoot.activeElement!==pitInput)pitInput.value=Number.isFinite(effectiveLoss)?effectiveLoss.toFixed(1):'';
    pitInput.onchange=()=>{
     const v=Number(pitInput.value);
