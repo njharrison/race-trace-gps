@@ -363,7 +363,18 @@ class RaceTraceGPS extends HTMLElement {
      if(this.hiddenDrivers.has(id))continue;
      for(const lapShift of [0,1,-1]){
       if(lapShift&&!Number.isFinite(this.hoverSeries.lapSeconds))continue;
-      for(let j=1;j<points.length;j++){
+      // Points are ordered by race distance. Search only segments within
+      // 12 screen pixels of the pointer, rather than every GPS segment
+      // on every mouse movement.
+      const minD=v.xMin+(mx-12-52)/(w-76)*(v.xMax-v.xMin)-lapShift;
+      const maxD=v.xMin+(mx+12-52)/(w-76)*(v.xMax-v.xMin)-lapShift;
+      let low=0,high=points.length;
+      while(low<high){const mid=(low+high)>>1;if(points[mid][0]<minD)low=mid+1;else high=mid;}
+      const first=Math.max(1,low);
+      low=0;high=points.length;
+      while(low<high){const mid=(low+high)>>1;if(points[mid][0]<=maxD)low=mid+1;else high=mid;}
+      const last=Math.min(points.length-1,low);
+      for(let j=first;j<=last;j++){
        const a=points[j-1],b=points[j];
        const shiftSeconds=lapShift===0?0:lapShift*this.hoverSeries.lapSeconds;
        const ax=x(a[0]+lapShift),ay=y(a[1]+shiftSeconds);
