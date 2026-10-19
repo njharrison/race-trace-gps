@@ -377,14 +377,16 @@ class RaceTraceGPS extends HTMLElement {
     const track=this.hoverSeries.historyTracks?.get(closest.id);
     let hoverTime=null;
     if(track?.length){
+     // Track tuples are [raw centreline phase, cumulative race distance, original timestamp].
+     // The chart X axis is cumulative race distance (index 1), NOT raw phase (index 0).
      let lo=0,hi=track.length-1;
      const distance=closest.d;
-     if(distance<=track[0][0])hoverTime=track[0][2];
-     else if(distance>=track[hi][0])hoverTime=track[hi][2];
+     if(distance<=track[0][1])hoverTime=track[0][2];
+     else if(distance>=track[hi][1])hoverTime=track[hi][2];
      else{
-      while(hi-lo>1){const mid=(lo+hi)>>1;if(track[mid][0]<distance)lo=mid;else hi=mid;}
-      const a=track[lo],b=track[hi],span=b[0]-a[0];
-      hoverTime=span>1e-8?a[2]+(distance-a[0])/span*(b[2]-a[2]):a[2];
+      while(hi-lo>1){const mid=(lo+hi)>>1;if(track[mid][1]<distance)lo=mid;else hi=mid;}
+      const a=track[lo],b=track[hi],span=b[1]-a[1];
+      hoverTime=span>1e-8?a[2]+(distance-a[1])/span*(b[2]-a[2]):a[2];
      }
     }
     const history=this.hoverSeries.history?.get(closest.id);
