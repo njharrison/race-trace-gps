@@ -246,11 +246,18 @@ class RaceTraceGPS extends HTMLElement {
    // the same GPS source timestamp must not change historical chart points.
    const previousF1=this.gps?.samples?.at(-1)?.timestamp;
    const incomingF1=gps.samples.at(-1)?.timestamp;
+   const previousTiming=this.timing?.samples?.at(-1)?.session_timestamp;
+   const incomingTiming=timing.samples.at(-1)?.session_timestamp;
+   // Timing and GPS update independently; a stationary GPS frame does not
+   // imply that the historical classification has stopped changing.
    if(this.gps&&this.timing&&this.gps.run===gps.run&&
       this.timing.run===timing.run&&
       this.gps.geometry?.circuit_key===gps.geometry?.circuit_key&&
       Number.isFinite(previousF1)&&Number.isFinite(incomingF1)&&
-      incomingF1===previousF1)return;
+      incomingF1===previousF1&&
+      this.gps.samples.length===gps.samples.length&&
+      this.timing.samples.length===timing.samples.length&&
+      previousTiming===incomingTiming)return;
    // A replay restart can reset timing before GPS (or vice versa).
    // Clear derived traces immediately when EITHER recorder starts a new run.
    const gpsChanged=!!this.gps&&(this.gps.run!==gps.run||
