@@ -484,6 +484,7 @@ class RaceTraceGPS extends HTMLElement {
    function crossingAt(track,d){
     for(let i=1;i<track.length;i++){
      const a=track[i-1],b=track[i],dx=b[1]-a[1];
+     if(isDiscontinuous(track.driverId,b[2]))continue;
      if(dx>1e-7&&a[1]<=d&&b[1]>=d)
       return a[2]+(d-a[1])/dx*(b[2]-a[2]);
     }
@@ -514,6 +515,17 @@ class RaceTraceGPS extends HTMLElement {
    const frames=Number.isFinite(raceStartTime)?
     allFrames.filter(f=>f.t>=raceStartTime):allFrames;
    if(!frames.length)throw Error('Waiting for GPS positions after official race start');
+   // Detect physically impossible transitions in source F1 time, not replay state.
+   const discontinuities=new Map(),lastGps=new Map();
+   for(const frame of frames)for(const [id,x,y] of frame.d){
+    const prev=lastGps.get(id),dt=prev?frame.t-prev.t:0;
+    if(prev&&dt>0&&Math.hypot(x-prev.x,y-prev.y)>Math.max(45,115*dt)){
+     if(!discontinuities.has(id))discontinuities.set(id,new Set());
+     discontinuities.get(id).add(frame.t);
+    }
+    lastGps.set(id,{x,y,t:frame.t});
+   }
+   const isDiscontinuous=(id,t)=>discontinuities.get(String(id))?.has(t)===true;
    const events=RaceTraceRecordingSync.crossings(this.timing).filter(e=>e[1]>=2&&
      (!Number.isFinite(raceStartTime)||e[2]>=raceStartTime));
    let calibration=null,provisional=true;
@@ -852,6 +864,8 @@ class RaceTraceGPS extends HTMLElement {
    eligible.sort((a,b)=>b[1].at(-1)[1]-a[1].at(-1)[1]);
    const [referenceId,reference]=eligible[0];
    const ref=reference.filter((p,i)=>!i||p[1]>reference[i-1][1]+1e-7);
+   for(const [id,track] of traces)track.driverId=id;
+   ref.driverId=referenceId;
    function crossingAt(track,d){
     for(let i=1;i<track.length;i++){
      const a=track[i-1],b=track[i],dx=b[1]-a[1];
@@ -1172,9 +1186,11 @@ class RaceTraceGPS extends HTMLElement {
    // must remain visible as a time loss, not redefine the reference.
    const neutralSegments=[];
    let cumulative=0;
-   const candidateTracks=[...traces].filter(([,track])=>track.length>2).map(([id,track])=>({
-    id,track:track.filter((p,i)=>!i||p[1]>track[i-1][1]+1e-7)
-   }));
+   const candidateTracks=[...traces].filter(([,track])=>track.length>2).map(([id,track])=>{
+    const filtered=track.filter((p,i)=>!i||p[1]>track[i-1][1]+1e-7);
+    filtered.driverId=id;
+    return {id,track:filtered};
+   });
    const neutralPaceStep=(from,to)=>{
     const values=[];
     for(const {track} of candidateTracks){
@@ -1237,14 +1253,14 @@ class RaceTraceGPS extends HTMLElement {
      // lap therefore spans [raceStartDistance-1, raceStartDistance].
      // Do not discard it: the prior threshold hid lap one entirely.
      if(p[1]<raceStartDistance-1)continue;
-     if(prev&&(p[2]-prev[2]>8||p[2]<=prev[2]||Math.abs(p[1]-prev[1])>.16)){
+     if(prev&&(isDiscontinuous(id,p[2])||p[2]-prev[2]>8||p[2]<=prev[2]||Math.abs(p[1]-prev[1])>.16)){
       if(segment.length)segments.push(segment);
       segment=[];
      }
      const d=p[1],lap=Math.floor(d),fraction=d-lap;
      const progress=profile?profileEval(profile,fraction):fraction;
      const referenceTime=origin+(lap+progress-raceStartDistance)*referenceSeconds+fuelClockCorrection(d)+neutralOffsetAt(d);
-     segment.push({d,t:p[2],raw:referenceTime-p[2]});
+     segment.push({d,t:p[2],raw:referenceTime-p[2],breakBefore:segment.length===0&&segments.length>0});
      prev=p;
     }
     if(segment.length)segments.push(segment);
@@ -1252,7 +1268,7 @@ class RaceTraceGPS extends HTMLElement {
     for(const seg of segments){
      for(let i=0;i<seg.length;i++){
       const p=seg[i];
-      if(!sigma){pts.push([p.d,p.raw]);continue;}
+      if(!sigma){pts.push([p.d,p.raw,p.breakBefore]);continue;}
       let sum=0,weight=0;
       for(let k=i;k>=0&&p.t-seg[k].t<=3*sigma;k--){
        const w=Math.exp(-.5*((p.t-seg[k].t)/sigma)**2);
@@ -1262,7 +1278,7 @@ class RaceTraceGPS extends HTMLElement {
        const w=Math.exp(-.5*((seg[k].t-p.t)/sigma)**2);
        sum+=seg[k].raw*w;weight+=w;
       }
-      pts.push([p.d,sum/weight]);
+      pts.push([p.d,sum/weight,p.breakBefore]);
      }
     }
     if(pts.length>1)series.set(id,pts);
@@ -1384,7 +1400,7 @@ class RaceTraceGPS extends HTMLElement {
       const lap=Math.floor(points[i][0]);
       let end=i+1;
       while(end<points.length&&Math.floor(points[end][0])===lap)end++;
-      if(lap>=Math.floor(recentFrom)-1||end-i<=24){
+      if(points.slice(i,end).some(p=>p[2])||lap>=Math.floor(recentFrom)-1||end-i<=24){
        for(let j=i;j<end;j++)out.push(points[j]);
       }else{
        // Eight bins, first/last plus minimum and maximum in each bin.
@@ -1651,7 +1667,7 @@ class RaceTraceGPS extends HTMLElement {
     }
     ctx.setLineDash([]);ctx.globalAlpha=1;
     ctx.lineWidth=id===referenceId&&!useLearned?2.5:1.5;ctx.beginPath();
-    points.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1])):ctx.moveTo(x(p[0]),y(p[1])));
+    points.forEach((p,j)=>j&&!p[2]?ctx.lineTo(x(p[0]),y(p[1])):ctx.moveTo(x(p[0]),y(p[1])));
     ctx.stroke();
 
    }
