@@ -729,7 +729,7 @@ class RaceTraceGPS extends HTMLElement {
     if([sample.session_status,sample.session_state,sample.race_status,
          sample.sessionStatus,sample.raceStatus].some(v=>
        /^(FINISHED|FINISH|ENDED|COMPLETE|COMPLETED|CHEQUERED|CHECKERED)$/i.test(String(v??''))))
-      flagTimes.push(sampleClock);
+      flagTimes.push(sample.session_timestamp);
    }
    if(flagTimes.length){
     const flagTime=Math.min(...flagTimes);
@@ -763,8 +763,10 @@ class RaceTraceGPS extends HTMLElement {
       if(t>=flagTime-5){crossing={time:t,source:'GPS finish crossing'};break;}
      }
      const current=finishAt.get(id);
-     if(crossing&&(!current||current.source!=='flag crossing'||
-        Math.abs(current.time-crossing.time)>8))
+     // Official lap-completion events are authoritative. GPS phase can
+     // wrap early or drift; never replace an official finish crossing
+     // with a nearby GPS wrap (even when their times differ).
+     if(crossing&&(!current||current.source!=='flag crossing'))
       finishAt.set(id,crossing);
     }
    }
