@@ -78,9 +78,15 @@ function calibrate(geometry,frames,lapCrossings,{windowSeconds=3}={}){
  for(const [driver,completed,time] of lapCrossings){
   if(completed<2||!Number.isFinite(time))continue;
   let best=null;
-  for(const frame of frames){
+  // Frames are chronological. Restrict each crossing to its small
+  // source-time window instead of rescanning the complete race recording.
+  let lo=0,hi=frames.length;
+  const earliest=time-windowSeconds;
+  while(lo<hi){const mid=(lo+hi)>>1;if(frames[mid].t<earliest)lo=mid+1;else hi=mid;}
+  for(let i=lo;i<frames.length&&frames[i].t<=time+windowSeconds;i++){
+   const frame=frames[i];
    const difference=Math.abs(frame.t-time);
-   if(difference>windowSeconds||best&&difference>=best.difference)continue;
+   if(best&&difference>=best.difference)continue;
    const position=frame.d.find(d=>String(d[0])===String(driver));
    if(position)best={difference,position};
   }
