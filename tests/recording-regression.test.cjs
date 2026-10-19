@@ -73,3 +73,19 @@ test('timestamp-indexed calibration chooses same nearest GPS sample as full scan
  };
  for(let k=0;k<2000;k++){const t=k*3.97;assert.deepEqual(indexed(t,3,'1'),original(t,3,'1'));}
 });
+
+test('official Piastri lap 57 crossing is after the chequered flag', {skip:!both},()=>{
+ const flag=timing.race_control.find(e=>/CHEQUERED FLAG/i.test(e.message||''));
+ assert.ok(flag);
+ const flagTime=Date.parse(flag.utc)/1000;
+ const crossing=timing.samples.find(s=>s.session_timestamp>=flagTime&&
+  s.drivers.some(d=>String(d.id)==='81'&&Number(d.completed_laps)>=57));
+ assert.ok(crossing,'Piastri must complete lap 57 after the flag');
+ assert.ok(gps.samples.some(s=>s.timestamp>crossing.session_timestamp&&
+  s.drivers.some(d=>String(d.id)==='81')),'GPS must continue after Piastri finish');
+});
+test('official finish crossing takes precedence over GPS fallback',()=>{
+ const src=fs.readFileSync(require('node:path').join(__dirname,'..','race-trace-gps.js'),'utf8');
+ assert.match(src,/if\(crossing&&\(!current\|\|current\.source!=='flag crossing'\)\)/);
+ assert.doesNotMatch(src,/Math\.abs\(current\.time-crossing\.time\)>8/);
+});
