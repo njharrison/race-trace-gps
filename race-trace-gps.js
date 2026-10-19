@@ -392,14 +392,13 @@ class RaceTraceGPS extends HTMLElement {
     if(history?.length&&Number.isFinite(hoverTime)){
      let lo=0,hi=history.length;
      while(lo<hi){const mid=(lo+hi)>>1;if(history[mid].t<=hoverTime)lo=mid+1;else hi=mid;}
-     historic=history[Math.max(0,lo-1)];
-     if(historic&&Math.abs(historic.t-hoverTime)>120)historic=null;
+     if(lo>0)historic=history[lo-1];
     }
     const label=String(meta.tla||meta.abbreviation||meta.name||meta.driver_name||'#'+closest.id);
     const team=meta.team_name||meta.team||meta.constructor_name||'Unknown';
-    const tyre=historic?.tyre||meta.tyre_compound||'Unknown';
+    const tyre=historic?.tyre??'Unknown';
     const pos=historic?.position??'Unknown';
-    const lap=historic?.completed_laps??Math.max(1,Math.floor(closest.d)+1);
+    const lap=historic?.completed_laps??'Unknown';
     tooltip.replaceChildren();
     const heading=document.createElement('strong');
     heading.textContent=label+' #'+closest.id+(closest.lapShift===1?' · LAPPED PROJECTION':closest.lapShift===-1?' · LAP AHEAD PROJECTION':'');
@@ -1594,21 +1593,26 @@ class RaceTraceGPS extends HTMLElement {
    // mousemove handler only does O(log N) lookups for the selected car.
    if(this.historyKey!==this.timing||!this.historyByDriver){
     const history=new Map();
-    for(const sample of this.timing.samples||[]){
-     if(!Number.isFinite(sample.session_timestamp))continue;
+    const samples=[...(this.timing.samples||[])].filter(s=>Number.isFinite(Number(s.session_timestamp)))
+     .sort((a,b)=>Number(a.session_timestamp)-Number(b.session_timestamp));
+    for(const sample of samples){
      for(const d of sample.drivers||[]){
       const id=String(d.id??d.racing_number??'');
       if(!id)continue;
       if(!history.has(id))history.set(id,[]);
-      history.get(id).push({
-       t:sample.session_timestamp,
-       position:d.position??d.current_position??null,
-       completed_laps:Number.isFinite(Number(d.completed_laps))?Number(d.completed_laps):null,
-       tyre:d.tyre_compound||d.compound||d.tire_compound||d.tyre||d.tire||null
+      const states=history.get(id);
+      const prior=states.length?states[states.length-1]:null;
+      const compound=d.tyre_compound??d.compound??d.tire_compound??d.tyre??d.tire;
+      const rawLap=d.completed_laps;
+      const rawPosition=d.position??d.current_position;
+      states.push({
+       t:Number(sample.session_timestamp),
+       position:rawPosition==null||rawPosition===''?(prior?.position??null):rawPosition,
+       completed_laps:rawLap==null||rawLap===''?(prior?.completed_laps??null):(Number.isFinite(Number(rawLap))?Number(rawLap):(prior?.completed_laps??null)),
+       tyre:compound==null||compound===''?(prior?.tyre??null):compound
       });
      }
     }
-    for(const states of history.values())states.sort((a,b)=>a.t-b.t);
     this.historyByDriver=history;
     this.historyKey=this.timing;
    }
