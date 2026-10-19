@@ -1321,12 +1321,20 @@ class RaceTraceGPS extends HTMLElement {
     for(const p of completed){
      const slowdown=p.duration-base;
      if(slowdown<9||p.duration>base+110)continue;
-     const inWindow=gps.filter(g=>g.t>=p.t0-5&&g.t<=p.t1+5);
+     // GPS samples are chronological: bound the candidate window with
+     // binary searches instead of allocating/filtering the entire history
+     // for every candidate lap.
+     const lowerBound=t=>{
+      let lo=0,hi=gps.length;
+      while(lo<hi){const mid=(lo+hi)>>1;if(gps[mid].t<t)lo=mid+1;else hi=mid;}
+      return lo;
+     };
+     const from=lowerBound(p.t0-5),to=lowerBound(p.t1+5+1e-7);
      let stationary=false;
-     for(let j=0;j+3<inWindow.length;j++){
-      const a=inWindow[j];
-      for(let k=j+3;k<inWindow.length&&inWindow[k].t-a.t<=45;k++){
-       if(inWindow[k].t-a.t>=3&&Math.hypot(inWindow[k].x-a.x,inWindow[k].y-a.y)<5){
+     for(let j=from;j+3<to;j++){
+      const a=gps[j];
+      for(let k=j+3;k<to&&gps[k].t-a.t<=45;k++){
+       if(gps[k].t-a.t>=3&&Math.hypot(gps[k].x-a.x,gps[k].y-a.y)<5){
         stationary=true;break;
        }
       }
