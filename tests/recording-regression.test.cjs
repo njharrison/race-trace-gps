@@ -89,3 +89,11 @@ test('official finish crossing takes precedence over GPS fallback',()=>{
  assert.match(src,/if\(crossing&&\(!current\|\|current\.source!=='flag crossing'\)\)/);
  assert.doesNotMatch(src,/Math\.abs\(current\.time-crossing\.time\)>8/);
 });
+
+test('completed-lap axis includes the first racing lap and ends at official lap count',()=>{
+ const source=fs.readFileSync(require('node:path').join(__dirname,'..','race-trace-gps.js'),'utf8');
+ assert.match(source,/shift:lap-value/,'official completed lap N must align to distance N');
+ assert.match(source,/const axisLabel=String\(lap\)/,'axis must show completed laps');
+ assert.match(source,/if\(p\[1\]<0\)continue/,'plot must retain racing lap 1 at distance 0–1');
+ assert.match(source,/const distance=lap;/,'official crossing checks must use completed lap distance');
+});
