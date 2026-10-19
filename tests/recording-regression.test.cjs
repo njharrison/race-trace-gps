@@ -49,3 +49,27 @@ test('recorded replay contains pause without equivalent source-clock jump', {ski
  const pauses=samples.filter((s,i)=>i>0&&s.recorded_at-samples[i-1].recorded_at>5&&(s.timestamp-samples[i-1].timestamp)<3);
  assert.ok(pauses.length>0);
 });
+
+test('timestamp-indexed calibration chooses same nearest GPS sample as full scan',()=>{
+ const frames=Array.from({length:20000},(_,i)=>({t:i*.4,d:i%7?[['1',i,1]]:[['2',i,2]]}));
+ const original=(time,windowSeconds,driver)=>{
+  let best=null;
+  for(const frame of frames){const difference=Math.abs(frame.t-time);
+   if(difference>windowSeconds||best&&difference>=best.difference)continue;
+   const position=frame.d.find(d=>String(d[0])===String(driver));
+   if(position)best={difference,position};
+  }return best;
+ };
+ const indexed=(time,windowSeconds,driver)=>{
+  let best=null,lo=0,hi=frames.length;
+  const earliest=time-windowSeconds;
+  while(lo<hi){const mid=(lo+hi)>>1;if(frames[mid].t<earliest)lo=mid+1;else hi=mid;}
+  for(let i=lo;i<frames.length&&frames[i].t<=time+windowSeconds;i++){
+   const frame=frames[i],difference=Math.abs(frame.t-time);
+   if(best&&difference>=best.difference)continue;
+   const position=frame.d.find(d=>String(d[0])===String(driver));
+   if(position)best={difference,position};
+  }return best;
+ };
+ for(let k=0;k<2000;k++){const t=k*3.97;assert.deepEqual(indexed(t,3,'1'),original(t,3,'1'));}
+});
