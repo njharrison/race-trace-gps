@@ -463,7 +463,7 @@ class RaceTraceGPS extends HTMLElement {
    ctx.drawImage(drag.snapshot,offsetX,offsetY,this.canvasWidth,this.canvasHeight);
    ctx.restore();
    if(drag.zone==='reference'){
-    const adjustment=drag.reference-Math.round(drag.dy/10)/10;
+    const adjustment=drag.reference-Math.round(drag.dy/20)/10;
     this.shadowRoot.querySelector('#refshift').textContent=
      'Reference '+(adjustment>0?'+':'')+adjustment.toFixed(1)+'s/lap';
    }
@@ -476,7 +476,7 @@ class RaceTraceGPS extends HTMLElement {
    const dx=drag.dx/rect.width,dy=drag.dy/rect.height;
    if(drag.zone==='both'&&Math.abs(drag.dx)>3)this.liveView=false;
    if(drag.zone==='reference'){
-    this.referenceLapAdjustment=drag.reference-Math.round(drag.dy/10)/10;
+    this.referenceLapAdjustment=drag.reference-Math.round(drag.dy/20)/10;
     // Reference changes alter the one-lap scale. Recompute Y limits
     // immediately while retaining the user's horizontal viewport.
     // Preserve any Y pan performed with the left-hand drag. Only change
