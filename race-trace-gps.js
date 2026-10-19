@@ -421,7 +421,15 @@ class RaceTraceGPS extends HTMLElement {
      if(lo>0)historic=history[lo-1];
     }
     const label=String(meta.tla||meta.abbreviation||meta.name||meta.driver_name||'#'+closest.id);
-    const team=meta.team_name||meta.team||meta.constructor_name||'Unknown';
+    // Reduced timing recordings omit team names. Prefer live driver
+    // metadata, with the known 2026 race-number roster as a fallback.
+    const team=meta.team_name||meta.team||meta.constructor_name||
+     ({'1':'McLaren','81':'McLaren','63':'Mercedes','12':'Mercedes',
+      '16':'Ferrari','44':'Ferrari','3':'Red Bull','6':'Red Bull',
+      '10':'Alpine','43':'Alpine','55':'Williams','23':'Williams',
+      '30':'Racing Bulls','41':'Racing Bulls','31':'Haas','87':'Haas',
+      '27':'Audi','5':'Audi','14':'Aston Martin','18':'Aston Martin',
+      '11':'Cadillac','77':'Cadillac'})[closest.id]||'Unknown';
     const tyre=historic?.tyre??'Unknown';
     const pos=historic?.position??'Unknown';
     const lap=historic?.completed_laps??'Unknown';
