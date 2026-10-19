@@ -1306,6 +1306,17 @@ class RaceTraceGPS extends HTMLElement {
     if(!gpsByDriver.has(id))gpsByDriver.set(id,[]);
     gpsByDriver.get(id).push({t:frame.t,x,y});
    }
+   // Pre-index neutralisation samples once; don't scan the full timing
+   // archive separately for every candidate pit lap.
+   const neutralTimes=this.timing.samples
+    .filter(s=>Number.isFinite(s.session_timestamp)&&
+     /^(SC|VSC|SAFETY CAR|VIRTUAL SAFETY CAR)$/i.test(String(s.track_status||'')))
+    .map(s=>s.session_timestamp).sort((a,b)=>a-b);
+   const neutralInWindow=(start,end)=>{
+    let lo=0,hi=neutralTimes.length;
+    while(lo<hi){const mid=(lo+hi)>>1;if(neutralTimes[mid]<start)lo=mid+1;else hi=mid;}
+    return lo<neutralTimes.length&&neutralTimes[lo]<=end;
+   };
    for(const [id,track] of traces){
     const completed=[];
     for(let lap=Math.max(raceStartDistance,Math.ceil(track[0][1]));lap<track.at(-1)[1];lap++){
@@ -1343,8 +1354,7 @@ class RaceTraceGPS extends HTMLElement {
      // A sparse GPS feed can miss a stationary pit-box interval.
      // Retain a slow-lap candidate without claiming it is verified.
      // Exclude stops overlapping official neutralisation periods.
-     const neutral=this.timing.samples.some(s=>Number.isFinite(s.session_timestamp)&&s.session_timestamp>=p.t0&&s.session_timestamp<=p.t1&&
-      /^(SC|VSC|SAFETY CAR|VIRTUAL SAFETY CAR)$/i.test(String(s.track_status||'')));
+     const neutral=neutralInWindow(p.t0,p.t1);
      pitStops.push({id,lap:p.lap,loss:slowdown,neutral,stationary,method:stationary?'GPS stop + lap-excess':'lap-excess only'});
     }
    }
