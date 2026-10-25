@@ -181,11 +181,11 @@ class RaceTraceGPS extends HTMLElement {
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
-   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',timing_delta_url:null,gps_delta_url:null,update_interval_ms:1000,formation_lap:false,height:460,...config};
+   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',timing_delta_url:null,gps_delta_url:null,update_interval_ms:5000,formation_lap:false,height:460,...config};
   this.draw();
  }
  set hass(hass){this._hass=hass;}
- connectedCallback(){this.refresh();this.timer=setInterval(()=>this.refresh(),Math.max(1000,Number(this.config?.update_interval_ms)||1000));}
+ connectedCallback(){this.refresh();this.timer=setInterval(()=>this.refresh(),Math.max(1000,Number(this.config?.update_interval_ms)||5000));}
  disconnectedCallback(){clearInterval(this.timer);this.timer=null;if(this.wheelFrame){cancelAnimationFrame(this.wheelFrame);this.wheelFrame=null;}this.resizeObserver?.disconnect();this.resizeObserver=null;}
  getCardSize(){return 9;}
  static getStubConfig(){return {};}
@@ -1680,8 +1680,9 @@ class RaceTraceGPS extends HTMLElement {
     if(t<this.historyLastTime){
      // Out-of-order archive: rebuild from the beginning rather than
      // corrupt the binary-searchable history.
-     this.historyByDriver=new Map();this.historyCount=0;
-     this.historyLastTime=-Infinity;k=-1;continue;
+     // Preserve safety: skip a late out-of-order snapshot rather than
+     // entering a rebuild loop. A new run resets the entire index.
+     continue;
     }
     this.historyLastTime=t;
     for(const d of sample.drivers||[]){
