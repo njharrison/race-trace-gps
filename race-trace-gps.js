@@ -1808,4 +1808,4 @@ class RaceTraceGPS extends HTMLElement {
   }catch(e){status.textContent='Experimental diagnostics: '+e.message;}
  }
 }
-if(!customElements.get('race-trace-gps'))customElements.define('race-trace-gps',RaceTraceGPS);
+if(!customElements.get('race-trace-gps-dev'))customElements.define('race-trace-gps-dev',RaceTraceGPS);
