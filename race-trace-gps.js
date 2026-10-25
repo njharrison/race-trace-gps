@@ -275,7 +275,7 @@ class RaceTraceGPS extends HTMLElement {
      timing.samples.length<this.timing.samples.length);
    if(gpsChanged||timingChanged){
     this.processed=null;this.processedKey=null;this.lastRender=null;
-    this.viewport=null;this.liveView=false;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;this.gpsProjectionCache.clear();this.lapProfileCache.clear();this.preparedCircuit=null;
+    this.viewport=null;this.liveView=false;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;this.gpsProjectionCache.clear();this.lapProfileCache.clear();this.preparedCircuit=null;this.rawTrackCache=null;
    }
    this.gps=gps;this.timing=timing;this.error='';this.draw();
   }catch(e){this.error=String(e);this.draw();}
@@ -592,9 +592,20 @@ class RaceTraceGPS extends HTMLElement {
    }
    const projectionStats={intersection:0,fallback:0,rejected:0};
    const last=new Map();
+   const rawKey=[this.gps.run,geometry.length,calibration.distance,direction,raceStartTime].join(':');
+   if(!this.rawTrackCache||this.rawTrackCache.key!==rawKey)
+    this.rawTrackCache={key:rawKey,drivers:new Map()};
    for(const [id,positions] of observations){
-    const track=[];
-    for(let i=0;i<positions.length;i++){
+    const prior=this.rawTrackCache.drivers.get(id);
+    // Previously unwrapped points are immutable here. Clone before the
+    // official alignment stage, which modifies trace coordinates in place.
+    const stable=prior&&prior.count<=positions.length&&
+     prior.first===positions[0]?.t&&
+     prior.last===positions[prior.count-1]?.t;
+    const track=stable?prior.track.slice():[];
+    const startIndex=stable?prior.count:0;
+    if(startIndex&&prior.lastState)last.set(id,{...prior.lastState});
+    for(let i=startIndex;i<positions.length;i++){
      const p=positions[i],before=positions[Math.max(0,i-1)],
       after=positions[Math.min(positions.length-1,i+1)];
      const tx=after.x-before.x,ty=after.y-before.y;
@@ -637,7 +648,10 @@ class RaceTraceGPS extends HTMLElement {
      track.push([0,unwrapped,p.t]);
      last.set(id,{phase:accepted?phase:prev.phase,value:unwrapped});
     }
-    traces.set(id,track);
+    this.rawTrackCache.drivers.set(id,{count:positions.length,
+     first:positions[0]?.t,last:positions.at(-1)?.t,
+     lastState:last.get(id)?{...last.get(id)}:null,track});
+    traces.set(id,track.map(p=>p.slice()));
    }
    // Before the first official lap crossing, the provisional finish line
    // is the leader's first GPS position. Cars behind it wrap to ~0.99.
