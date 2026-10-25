@@ -181,11 +181,11 @@ class RaceTraceGPS extends HTMLElement {
  }
  setConfig(config){
   this.config={gps_url:'/local/f1-race-trace/gps-recording.json',
-   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',timing_delta_url:null,gps_delta_url:null,formation_lap:false,height:460,...config};
+   timing_url:'/local/f1-race-trace/live-recording.json',driver_entity:'sensor.f1_drivers_driver_positions',timing_delta_url:null,gps_delta_url:null,update_interval_ms:5000,formation_lap:false,height:460,...config};
   this.draw();
  }
  set hass(hass){this._hass=hass;}
- connectedCallback(){this.refresh();this.timer=setInterval(()=>this.refresh(),5000);}
+ connectedCallback(){this.refresh();this.timer=setInterval(()=>this.refresh(),Math.max(1000,Number(this.config?.update_interval_ms)||5000));}
  disconnectedCallback(){clearInterval(this.timer);this.timer=null;if(this.wheelFrame){cancelAnimationFrame(this.wheelFrame);this.wheelFrame=null;}this.resizeObserver?.disconnect();this.resizeObserver=null;}
  getCardSize(){return 9;}
  static getStubConfig(){return {};}
@@ -1635,10 +1635,19 @@ class RaceTraceGPS extends HTMLElement {
    }
    const colors=['#fb7185','#38bdf8','#a3e635','#fbbf24','#c084fc','#2dd4bf','#f472b6','#93c5fd'];
    let i=0;
-   const driverMeta=new Map();
-   for(const sample of this.timing.samples)for(const d of sample.drivers||[]){
-    const id=String(d.id??'');if(id)driverMeta.set(id,d);
+   // Incremental driver metadata: process only newly appended timing frames.
+   if(!this.driverMetaCache||this.driverMetaCount>this.timing.samples.length||
+      this.driverMetaRun!==this.timing.run){
+    this.driverMetaCache=new Map();this.driverMetaCount=0;
+    this.driverMetaRun=this.timing.run;
    }
+   for(let k=this.driverMetaCount;k<this.timing.samples.length;k++){
+    for(const d of this.timing.samples[k].drivers||[]){
+     const id=String(d.id??'');if(id)this.driverMetaCache.set(id,d);
+    }
+   }
+   this.driverMetaCount=this.timing.samples.length;
+   const driverMeta=new Map(this.driverMetaCache);
    // The original timing-based card gets authoritative driver/team colours
    // from this live HA sensor, not the reduced recorder JSON.
    const liveState=this._hass?.states?.[this.config.driver_entity];
@@ -1658,33 +1667,40 @@ class RaceTraceGPS extends HTMLElement {
     });
    }
    const legend=this.shadowRoot.querySelector('#legend');legend.replaceChildren();
-   // Index historical driver states once per recording update. The
-   // mousemove handler only does O(log N) lookups for the selected car.
-   if(this.historyKey!==this.timing||!this.historyByDriver){
-    const history=new Map();
-    const samples=[...(this.timing.samples||[])].filter(s=>Number.isFinite(Number(s.session_timestamp)))
-     .sort((a,b)=>Number(a.session_timestamp)-Number(b.session_timestamp));
-    for(const sample of samples){
-     for(const d of sample.drivers||[]){
-      const id=String(d.id??d.racing_number??'');
-      if(!id)continue;
-      if(!history.has(id))history.set(id,[]);
-      const states=history.get(id);
-      const prior=states.length?states[states.length-1]:null;
-      const compound=d.tyre_compound??d.compound??d.tire_compound??d.tyre??d.tire;
-      const rawLap=d.completed_laps;
-      const rawPosition=d.position??d.current_position;
-      states.push({
-       t:Number(sample.session_timestamp),
-       position:rawPosition==null||rawPosition===''?(prior?.position??null):rawPosition,
-       completed_laps:rawLap==null||rawLap===''?(prior?.completed_laps??null):(Number.isFinite(Number(rawLap))?Number(rawLap):(prior?.completed_laps??null)),
-       tyre:compound==null||compound===''?(prior?.tyre??null):compound
-      });
-     }
-    }
-    this.historyByDriver=history;
-    this.historyKey=this.timing;
+   // Append only new timing samples to tooltip history. The recorder emits
+   // monotonically ordered source timestamps; reset if it ever rewinds.
+   if(!this.historyByDriver||this.historyRun!==this.timing.run||
+      this.historyCount>this.timing.samples.length){
+    this.historyByDriver=new Map();this.historyCount=0;
+    this.historyRun=this.timing.run;this.historyLastTime=-Infinity;
    }
+   for(let k=this.historyCount;k<this.timing.samples.length;k++){
+    const sample=this.timing.samples[k],t=Number(sample.session_timestamp);
+    if(!Number.isFinite(t))continue;
+    if(t<this.historyLastTime){
+     // Out-of-order archive: rebuild from the beginning rather than
+     // corrupt the binary-searchable history.
+     // Preserve safety: skip a late out-of-order snapshot rather than
+     // entering a rebuild loop. A new run resets the entire index.
+     continue;
+    }
+    this.historyLastTime=t;
+    for(const d of sample.drivers||[]){
+     const id=String(d.id??d.racing_number??'');if(!id)continue;
+     if(!this.historyByDriver.has(id))this.historyByDriver.set(id,[]);
+     const states=this.historyByDriver.get(id);
+     const prior=states.length?states[states.length-1]:null;
+     const compound=d.tyre_compound??d.compound??d.tire_compound??d.tyre??d.tire;
+     const rawLap=d.completed_laps;
+     const rawPosition=d.position??d.current_position;
+     states.push({t,
+      position:rawPosition==null||rawPosition===''?(prior?.position??null):rawPosition,
+      completed_laps:rawLap==null||rawLap===''?(prior?.completed_laps??null):(Number.isFinite(Number(rawLap))?Number(rawLap):(prior?.completed_laps??null)),
+      tyre:compound==null||compound===''?(prior?.tyre??null):compound
+     });
+    }
+   }
+   this.historyCount=this.timing.samples.length;
    this.hoverSeries={series:displaySeries,meta:driverMeta,lapSeconds,
     history:this.historyByDriver,historyTracks:traces};
    // Stable 2026 team colours, keyed by race number. Prefer live team_color
@@ -1707,7 +1723,14 @@ class RaceTraceGPS extends HTMLElement {
     const meta=driverMeta.get(id)||{};
     const label=String(meta.tla||meta.abbreviation||meta.name||meta.driver_name||('#'+id));
     const explicit=String(meta.team_color||'');
-    const color=/^#[0-9a-f]{6}$/i.test(explicit)?explicit:(teamColours[id]||colors[colourIndex%colors.length]);
+    const base=/^#[0-9a-f]{6}$/i.test(explicit)?explicit:(teamColours[id]||colors[colourIndex%colors.length]);
+    // Distinguish the second car in each team without losing team identity.
+    // Mix with white by 25%, keeping the primary car's colour unchanged.
+    const lighterTeammates=new Set(['81','12','44','6','43','23','41','87','5','18','77']);
+    const color=lighterTeammates.has(id)?'#'+[1,3,5].map(i=>{
+     const channel=parseInt(base.slice(i,i+2),16);
+     return Math.round(channel*.75+255*.25).toString(16).padStart(2,'0');
+    }).join(''):base;
     colourIndex++;colours.set(id,color);
     const button=document.createElement('button');
     button.textContent=label+' #'+id;
