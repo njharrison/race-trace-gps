@@ -189,6 +189,50 @@ class RaceTraceGPS extends HTMLElement {
  disconnectedCallback(){clearInterval(this.timer);this.timer=null;if(this.wheelFrame){cancelAnimationFrame(this.wheelFrame);this.wheelFrame=null;}this.resizeObserver?.disconnect();this.resizeObserver=null;}
  getCardSize(){return 9;}
  static getStubConfig(){return {};}
+ // Incrementally decode recorder frames and official lap crossings.
+ // Preserve the source clock and the same filtering rules as the full decoder.
+ getGpsFrames(){
+  const samples=this.gps.samples,run=this.gps.run;
+  if(!this.incrementalGps||this.incrementalGps.run!==run||
+     this.incrementalGps.count>samples.length||
+     this.incrementalGps.first!==samples[0]?.timestamp){
+   this.incrementalGps={run,first:samples[0]?.timestamp,count:0,frames:[]};
+  }
+  const cache=this.incrementalGps;
+  for(let i=cache.count;i<samples.length;i++){
+   const sample=samples[i];
+   if(!Number.isFinite(sample.timestamp)||
+      (i>0&&sample.timestamp<=samples[i-1].timestamp))continue;
+   cache.frames.push({t:sample.timestamp,d:(sample.drivers||[])
+    .filter(d=>d&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&!(d.x===0&&d.y===0))
+    .map(d=>[String(d.id),d.x,d.y])});
+  }
+  cache.count=samples.length;
+  return cache.frames;
+ }
+ getOfficialCrossings(){
+  const samples=this.timing.samples,run=this.timing.run;
+  if(!this.incrementalCrossings||this.incrementalCrossings.run!==run||
+     this.incrementalCrossings.count>samples.length||
+     this.incrementalCrossings.first!==samples[0]?.session_timestamp){
+   this.incrementalCrossings={run,first:samples[0]?.session_timestamp,
+    count:0,previous:new Map(),events:[]};
+  }
+  const cache=this.incrementalCrossings;
+  for(let i=cache.count;i<samples.length;i++){
+   const sample=samples[i],clock=sample.session_timestamp;
+   if(!Number.isFinite(clock))continue;
+   for(const driver of sample.drivers||[]){
+    const id=String(driver.id??''),lap=driver.completed_laps;
+    if(!id||!Number.isInteger(lap))continue;
+    const prior=cache.previous.get(id);
+    if(prior!==undefined&&lap===prior+1)cache.events.push([id,lap,clock]);
+    cache.previous.set(id,lap);
+   }
+  }
+  cache.count=samples.length;
+  return cache.events;
+ }
  async refresh(){
   if(!this.config||this.busy)return;
   this.busy=true;
@@ -534,7 +578,7 @@ class RaceTraceGPS extends HTMLElement {
    this.lapProfileCache.clear();
    const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
    const geometry=RaceTraceCircuit.prepare(points);
-   const allFrames=RaceTraceRecordingSync.gpsFrames(this.gps,sourceClock);
+   const allFrames=this.getGpsFrames();
    // The official FIA RACE START message has an event UTC timestamp.
    // Use the F1 session clock, never HA observed_at / wall-clock time.
    // Exclude the formation lap and stationary grid wait BEFORE unwrapping,
@@ -547,7 +591,7 @@ class RaceTraceGPS extends HTMLElement {
    const frames=Number.isFinite(raceStartTime)?
     allFrames.filter(f=>f.t>=raceStartTime):allFrames;
    if(!frames.length)throw Error('Waiting for GPS positions after official race start');
-   const events=RaceTraceRecordingSync.crossings(this.timing).filter(e=>e[1]>=2&&
+   const events=this.getOfficialCrossings().filter(e=>e[1]>=2&&
      (!Number.isFinite(raceStartTime)||e[2]>=raceStartTime));
    let calibration=null,provisional=true;
    if(events.length){
@@ -1321,7 +1365,7 @@ class RaceTraceGPS extends HTMLElement {
     this.pitCache=(()=>{
    const pitStops=[];
    const gpsByDriver=new Map();
-   const frames=RaceTraceRecordingSync.gpsFrames(this.gps);
+   const frames=this.getGpsFrames();
    for(const frame of frames)for(const [id,x,y] of frame.d){
     if(!gpsByDriver.has(id))gpsByDriver.set(id,[]);
     gpsByDriver.get(id).push({t:frame.t,x,y});
