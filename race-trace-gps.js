@@ -275,7 +275,7 @@ class RaceTraceGPS extends HTMLElement {
      timing.samples.length<this.timing.samples.length);
    if(gpsChanged||timingChanged){
     this.processed=null;this.processedKey=null;this.lastRender=null;
-    this.viewport=null;this.liveView=false;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;this.gpsProjectionCache.clear();this.lapProfileCache.clear();
+    this.viewport=null;this.liveView=false;this.hiddenDrivers.clear();this.referenceLapAdjustment=0;this.gpsProjectionCache.clear();this.lapProfileCache.clear();this.preparedCircuit=null;
    }
    this.gps=gps;this.timing=timing;this.error='';this.draw();
   }catch(e){this.error=String(e);this.draw();}
@@ -532,8 +532,15 @@ class RaceTraceGPS extends HTMLElement {
    // Rebuild from the current recording, independent of prior refreshes.
    // Lap profiles depend on alignment and must not survive a new rebuild.
    this.lapProfileCache.clear();
-   const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
-   const geometry=RaceTraceCircuit.prepare(points);
+   // Geometry is immutable within a recording. Delta updates preserve the
+   // geometry object, so reuse the exact prepared centreline across polls.
+   // A full reload/new geometry object forces the original preparation path.
+   if(!this.preparedCircuit||this.preparedCircuit.source!==this.gps.geometry){
+    const points=this.gps.geometry.points.map(p=>Array.isArray(p)?p:[p.x,p.y]);
+    this.preparedCircuit={source:this.gps.geometry,
+     value:RaceTraceCircuit.prepare(points)};
+   }
+   const geometry=this.preparedCircuit.value;
    const allFrames=RaceTraceRecordingSync.gpsFrames(this.gps,sourceClock);
    // The official FIA RACE START message has an event UTC timestamp.
    // Use the F1 session clock, never HA observed_at / wall-clock time.
