@@ -1486,16 +1486,19 @@ class RaceTraceGPS extends HTMLElement {
     this.renderSeriesKey=this.processedKey+':'+this.referenceLapAdjustment+':'+this.fuelEffect+':'+this.referenceMode+':'+this.useDriverProfiles+':'+this.applyTimingCorrections+':'+this.smoothingSeconds;
    }
    const displaySeries=this.renderSeries;
-   let minX=Infinity,maxX=-Infinity,pointCount=0;
-   const gapValues=[];
-   for(const points of series.values())for(const p of points){
-    minX=Math.min(minX,p[0]);
-    maxX=Math.max(maxX,p[0]);
-    gapValues.push(p[1]);
-    pointCount++;
+   // Range metadata depends on computed series, not viewport or visibility.
+   // Never sort every historical gap on zoom/pan: that sorted array was unused.
+   if(!this.gapRangeCache||this.gapRangeCache.series!==series){
+    let minX=Infinity,maxX=-Infinity,pointCount=0;
+    for(const points of series.values())for(const p of points){
+     if(p[0]<minX)minX=p[0];
+     if(p[0]>maxX)maxX=p[0];
+     pointCount++;
+    }
+    this.gapRangeCache={series,minX,maxX,pointCount};
    }
+   const {minX,maxX,pointCount}=this.gapRangeCache;
    if(!pointCount)throw Error('No overlapping race distances for gap calculation');
-   gapValues.sort((a,b)=>a-b);
    // Default vertical extent is always one reference lap plus 10s:
    // half a lap above and below zero, with 5s padding at each end.
    // Keep manual panning available; reference-lap dragging resets Y.
