@@ -12,7 +12,8 @@ const context={console,Math,Number,Map,Set,Array,Object,String,Date,
 vm.runInNewContext(source,context,{filename:'race-trace-gps.js'});
 const {RaceTraceCircuit:circuit,RaceTraceRecordingSync:sync}=context;
 test('card loads and registers its custom element',()=>{
- assert.ok(registered.get('race-trace-gps'));
+ assert.ok(registered.get('race-trace-gps-dev'));
+ assert.equal(registered.has('race-trace-gps'),false,'dev build must not register the production element');
 });
 test('GPS uses original timestamps, not recorded_at, across a paused replay',()=>{
  const recording={schema_version:1,samples:[
