@@ -1099,6 +1099,13 @@ class RaceTraceGPS extends HTMLElement {
    // Original offline prototype: evaluate the driver's own normalised
    // reference at its GPS distance, then subtract the actual GPS timestamp.
    // Keep GPS samples as X coordinates; do not rebuild timestamps from laps.
+   // View-only redraws reuse the exact completed gap series. Recompute only
+   // when recording data or a calculation setting changes.
+   const gapKey=JSON.stringify([this.processedKey,this.referenceLapAdjustment,
+    this.fuelEffect,this.smoothingSeconds,this.useDriverProfiles,
+    this.applyTimingCorrections]);
+   if(!this.gapSeriesCache||this.gapSeriesCache.key!==gapKey){
+    const computed=(()=>{
    const profileEval=(profile,f)=>{
     const n=profile.length-1;
     const u=Math.max(0,Math.min(1,f))*n,i=Math.min(n-1,Math.floor(u));
@@ -1297,6 +1304,11 @@ class RaceTraceGPS extends HTMLElement {
     }
     if(pts.length>1)series.set(id,pts);
    }
+    return {series,referenceSeconds,raceLaps};
+    })();
+    this.gapSeriesCache={key:gapKey,...computed};
+   }
+   const {series,referenceSeconds,raceLaps}=this.gapSeriesCache;
    // Provisional pit detection from GPS lap-time excess. Compare each driver's
    // complete laps against their own clean-lap median; use two-lap windows
    // to capture entry and exit across the timing line. A lap is a candidate
