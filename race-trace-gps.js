@@ -592,38 +592,20 @@ class RaceTraceGPS extends HTMLElement {
      // Geometry projection is expensive (scans every circuit segment).
      // Cache stable points across 5-second polls. Include both neighbours
      // because the perpendicular depends on the car's travel direction.
-     const cacheKey=id+':'+p.t+':'+p.x+':'+p.y+':'+before.x+':'+before.y+':'+after.x+':'+after.y;
+     // Project onto the closest centreline SEGMENT, then interpolate its
+     // cumulative arc distance. Use this same projection for calibration,
+     // unwrapping and the plotted GPS trace; do not override it using the
+     // car's heading/perpendicular intersection.
+     const cacheKey=id+':'+p.t+':'+p.x+':'+p.y;
      let cached=this.gpsProjectionCache.get(cacheKey);
-     let distance,usedIntersection=false;
+     let distance;
      if(cached){
-      distance=cached.distance;usedIntersection=cached.usedIntersection;
+      distance=cached.distance;
      }else{
-     const nearest=RaceTraceCircuit.project(geometry,p.x,p.y);
-     distance=nearest.distance;
-     if(norm>1){
-      const nx=-ty/norm,ny=tx/norm;
-      let best=null;
-      for(const s of geometry.segments){
-       const denominator=nx*s.dy-ny*s.dx;
-       if(Math.abs(denominator)<1e-8)continue;
-       const ax=s.a[0]-p.x,ay=s.a[1]-p.y;
-       const u=(ax*s.dy-ay*s.dx)/denominator;
-       const v=(ax*ny-ay*nx)/denominator;
-       if(v<0||v>1||Math.abs(u)>120)continue;
-       const candidate={distance:s.start+v*s.size,error:Math.abs(u)};
-       if(!best||candidate.error<best.error)best=candidate;
-      }
-      if(best){
-       const circular=Math.abs(best.distance-nearest.distance);
-       if(Math.min(circular,geometry.length-circular)<geometry.length*.08){
-        distance=best.distance;usedIntersection=true;
-       }
-      }
+      distance=RaceTraceCircuit.project(geometry,p.x,p.y).distance;
+      this.gpsProjectionCache.set(cacheKey,{distance});
      }
-     this.gpsProjectionCache.set(cacheKey,{distance,usedIntersection});
-     }
-     if(usedIntersection)projectionStats.intersection++;
-     else projectionStats.fallback++;
+     projectionStats.fallback++;
      const phase=((distance-calibration.distance)*direction%geometry.length+
       geometry.length)%geometry.length/geometry.length;
      const prev=last.get(id);
