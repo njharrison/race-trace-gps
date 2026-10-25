@@ -1131,11 +1131,12 @@ class RaceTraceGPS extends HTMLElement {
     for(let i=1;i<n;i++)result[i]=Math.max(result[i],result[i-1]+1e-7);
     return result[n-1]<1?result:null;
    };
-   const sharedProfile=learned?smoothProfile(learned):null;
+   const sharedProfile=learned?learned.slice():null;
    const profiles=new Map();
    for(const [id,p] of driverProfiles){
-    const smoothed=smoothProfile(p);
-    if(smoothed)profiles.set(id,smoothed);
+    // Preserve the measured fractional-lap timing shape without a second
+    // Gaussian pass; trace smoothing remains separately configurable.
+    if(p)profiles.set(id,p.slice());
    }
    const series=new Map(),sigma=this.smoothingSeconds/2;
    const origin=Number.isFinite(originTime)?originTime:ref[0][2];
