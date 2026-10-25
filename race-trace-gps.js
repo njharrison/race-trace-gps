@@ -186,7 +186,7 @@ class RaceTraceGPS extends HTMLElement {
  }
  set hass(hass){this._hass=hass;}
  connectedCallback(){this.refresh();this.timer=setInterval(()=>this.refresh(),5000);}
- disconnectedCallback(){clearInterval(this.timer);this.timer=null;this.resizeObserver?.disconnect();this.resizeObserver=null;}
+ disconnectedCallback(){clearInterval(this.timer);this.timer=null;if(this.wheelFrame){cancelAnimationFrame(this.wheelFrame);this.wheelFrame=null;}this.resizeObserver?.disconnect();this.resizeObserver=null;}
  getCardSize(){return 9;}
  static getStubConfig(){return {};}
  async refresh(){
@@ -506,7 +506,10 @@ class RaceTraceGPS extends HTMLElement {
    const yr=Math.max(1,Math.min(2000,(v.yMax-v.yMin)*factor));
    this.viewport={xMin:cx-fx*xr,xMax:cx+(1-fx)*xr,
     yMin:cy-(1-fy)*yr,yMax:cy+fy*yr};
-   this.draw();
+   // Coalesce high-frequency wheel events into one redraw per animation frame.
+   if(!this.wheelFrame)this.wheelFrame=requestAnimationFrame(()=>{
+    this.wheelFrame=null;this.draw();
+   });
   };
   if(!this.gps||!this.timing){status.textContent=this.error||'Waiting for GPS and timing recordings';return;}
   try{
