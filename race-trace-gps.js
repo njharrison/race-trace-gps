@@ -203,7 +203,7 @@ class RaceTraceGPS extends HTMLElement {
     if(previous){
      const deltaUrl=this.config.gps_delta_url||
       this.config.gps_url.replace(/\.json(?=\?|$)/,'-delta.json');
-     if(deltaUrl!==this.config.gps_url)try{
+     if(deltaUrl!==this.config.gps_url&&!this.unavailableDeltaUrls?.has(deltaUrl))try{
       const delta=await loadJson(deltaUrl);
       const count=previous.samples.length;
       const runMatches=delta.run===previous.run&&
@@ -217,7 +217,13 @@ class RaceTraceGPS extends HTMLElement {
        return {...previous,samples:previous.samples.concat(
         delta.samples.slice(count-delta.sample_start))};
       }
-     }catch(_err){/* Missing, stale or invalid delta: full reload. */}
+     }catch(err){
+      // A missing optional delta endpoint must not generate a 404 every
+      // second. Continue using the full recording for this card instance.
+      if(/HTTP 404\b/.test(String(err))){
+       (this.unavailableDeltaUrls??=new Set()).add(deltaUrl);
+      }
+     }
     }
     return loadJson(this.config.gps_url);
    };
@@ -226,7 +232,7 @@ class RaceTraceGPS extends HTMLElement {
     if(previous){
      const deltaUrl=this.config.timing_delta_url||
       this.config.timing_url.replace(/\.json(?=\?|$)/,'-delta.json');
-     if(deltaUrl!==this.config.timing_url)try{
+     if(deltaUrl!==this.config.timing_url&&!this.unavailableDeltaUrls?.has(deltaUrl))try{
       const delta=await loadJson(deltaUrl);
       const count=previous.samples.length,events=(previous.race_control||[]).length;
       if(delta.schema_version===1&&delta.run===previous.run&&
@@ -240,7 +246,11 @@ class RaceTraceGPS extends HTMLElement {
         samples:previous.samples.concat(delta.samples.slice(count-delta.sample_start)),
         race_control:(previous.race_control||[]).concat(delta.race_control.slice(events-delta.event_start))};
       }
-     }catch(_err){/* Fall back to full archive. */}
+     }catch(err){
+      if(/HTTP 404\b/.test(String(err))){
+       (this.unavailableDeltaUrls??=new Set()).add(deltaUrl);
+      }
+     }
     }
     return loadJson(this.config.timing_url);
    };
