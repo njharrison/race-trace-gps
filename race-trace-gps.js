@@ -1843,35 +1843,29 @@ class RaceTraceGPS extends HTMLElement {
 
    }
 
-   // Both projections are time shifts at the same race distance:
-   // +loss: where the selected driver emerges after stopping;
-   // -loss: the symmetric boundary for a rival stopping behind them.
-   if(this.pitEnabled&&Number.isFinite(effectiveLoss)&&effectiveLoss>=0){
+   // Pit projections are displaced in both time and race distance.
+   // +loss (our emergence): move backwards along the X axis;
+   // -loss (a rival emerging ahead): move forwards along the X axis.
+   // Convert seconds to reference-lap distance consistently for both
+   // normal and neutralised stops; never modify the actual car traces.
+   const drawPitProjection=(loss,color,alpha)=>{
+    if(!this.pitEnabled||!Number.isFinite(loss)||loss<0)return;
     const chosen=series.get(this.pitDriver);
-    if(chosen?.length){
-     for(const sign of [-1,1]){
-      ctx.save();ctx.strokeStyle='#ffffff';
-      ctx.lineWidth=1.8;ctx.globalAlpha=.9;ctx.setLineDash([2,5]);
-      ctx.beginPath();
-      chosen.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1]+sign*effectiveLoss)):
-       ctx.moveTo(x(p[0]),y(p[1]+sign*effectiveLoss)));
-      ctx.stroke();ctx.restore();
-     }
+    if(!chosen?.length)return;
+    const distanceOffset=loss/Math.max(1,lapSeconds);
+    for(const sign of [-1,1]){
+     ctx.save();ctx.strokeStyle=color;ctx.lineWidth=1.8;
+     ctx.globalAlpha=alpha;ctx.setLineDash([2,5]);ctx.beginPath();
+     chosen.forEach((p,j)=>{
+      const px=x(p[0]-sign*distanceOffset);
+      const py=y(p[1]+sign*loss);
+      if(j)ctx.lineTo(px,py);else ctx.moveTo(px,py);
+     });
+     ctx.stroke();ctx.restore();
     }
-   }
-   // VSC pit projections for the same driver, in neutral grey.
-   if(this.pitEnabled&&Number.isFinite(vscEffectiveLoss)&&vscEffectiveLoss>=0){
-    const chosen=series.get(this.pitDriver);
-    if(chosen?.length){
-     for(const sign of [-1,1]){
-      ctx.save();ctx.strokeStyle='#94a3b8';ctx.lineWidth=1.8;
-      ctx.globalAlpha=.85;ctx.setLineDash([2,5]);ctx.beginPath();
-      chosen.forEach((p,j)=>j?ctx.lineTo(x(p[0]),y(p[1]+sign*vscEffectiveLoss)):
-       ctx.moveTo(x(p[0]),y(p[1]+sign*vscEffectiveLoss)));
-      ctx.stroke();ctx.restore();
-     }
-    }
-   }
+   };
+   drawPitProjection(effectiveLoss,'#ffffff',.9);
+   drawPitProjection(vscEffectiveLoss,'#94a3b8',.85);
    ctx.restore();
    // Render retirement crosses last so other drivers cannot obscure them.
    // Outline in white, then colour the centre for contrast.
