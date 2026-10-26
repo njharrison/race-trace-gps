@@ -263,7 +263,8 @@ class RaceTraceGPS extends HTMLElement {
       incomingF1===previousF1&&
       this.gps.samples.length===gps.samples.length&&
       this.timing.samples.length===timing.samples.length&&
-      previousTiming===incomingTiming)return;
+      previousTiming===incomingTiming&&
+      (this.timing.race_control||[]).length===(timing.race_control||[]).length)return;
    // A replay restart can reset timing before GPS (or vice versa).
    // Clear derived traces immediately when EITHER recorder starts a new run.
    const gpsChanged=!!this.gps&&(this.gps.run!==gps.run||
@@ -524,8 +525,10 @@ class RaceTraceGPS extends HTMLElement {
    }
    // Heavy GPS projection, alignment and clean-lap learning are cached.
    // Viewport, reference-time adjustment and smoothing must not invalidate it.
-   const key=[this.gps.samples.length,this.gps.samples.at(-1)?.timestamp,
-    this.timing.samples.length,this.timing.samples.at(-1)?.session_timestamp].join(':');
+   const key=[this.gps.run,this.timing.run,
+    this.gps.samples.length,this.gps.samples.at(-1)?.timestamp,
+    this.timing.samples.length,this.timing.samples.at(-1)?.session_timestamp,
+    (this.timing.race_control||[]).length].join(':');
    if(!this.processed||this.processedKey!==key){
     this.processedKey=key;
    this.processed=(()=>{
@@ -551,6 +554,17 @@ class RaceTraceGPS extends HTMLElement {
       !/RESTART|FORMATION|ABORT/i.test(String(e.message||'')))
     .map(e=>Date.parse(e.utc||'')/1000).filter(Number.isFinite);
    const raceStartTime=raceStarts.length?Math.min(...raceStarts):null;
+   // Grid installation laps and the formation/grid wait are not racing.
+   // Do not project them into a provisional race trace. Once the official
+   // start event arrives, use only original GPS timestamps after lights out.
+   if(!Number.isFinite(raceStartTime)&&!this.config.formation_lap){
+    const ctx=canvas.getContext('2d');
+    if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);
+    status.textContent='Waiting for official race start — ignoring laps to grid';
+    const legend=this.shadowRoot.querySelector('#legend');
+    if(legend)legend.replaceChildren();
+    return;
+   }
    const frames=Number.isFinite(raceStartTime)?
     allFrames.filter(f=>f.t>=raceStartTime):allFrames;
    if(!frames.length)throw Error('Waiting for GPS positions after official race start');
