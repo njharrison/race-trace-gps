@@ -1359,25 +1359,6 @@ class RaceTraceGPS extends HTMLElement {
     }
     if(pts.length>1)series.set(id,pts);
    }
-    // Before a robust clean-lap profile exists, compare each car with the
-    // leader's actual timestamp at the same GPS race distance. The leader
-    // is exactly zero; following cars have negative gaps. This avoids an
-    // invented 100-second lap reference during the opening laps.
-    if(!learned){
-     const provisionalSeries=new Map();
-     for(const [id,track] of traces){
-      const source=this.applyTimingCorrections?(correctedTraces.get(id)||track):track;
-      const pts=[];
-      for(const p of source){
-       if(p[1]<0)continue;
-       const leaderTime=refTimeAtDistance(p[1]);
-       if(!Number.isFinite(leaderTime))continue;
-       pts.push([p[1],id===referenceId?0:leaderTime-p[2]]);
-      }
-      if(pts.length>1)provisionalSeries.set(id,pts);
-     }
-     return {series:provisionalSeries,referenceSeconds,raceLaps};
-    }
     return {series,referenceSeconds,raceLaps};
     })();
     this.gapSeriesCache={key:gapKey,...computed};
