@@ -886,7 +886,11 @@ class RaceTraceGPS extends HTMLElement {
     }
    }
    const officialStart=startMessages.length?Math.min(...startMessages):null;
-   let raceStartDistance=2; // Official lap 2 ends at distance 2; racing lap 1 occupies 0–1.
+   // Before official alignment, the provisional distance axis begins at
+   // the first GPS racing position, not the official lap-2 crossing.
+   // Otherwise the reference clock is displaced by two entire laps and
+   // the opening trace falls outside the normal chart's vertical window.
+   let raceStartDistance=provisional?0:2;
    // Official start messages are retained for diagnostics. They must not
    // shift the racing-lap axis after per-driver official alignment.
    // Retain partial and provisional drivers; lap one begins at distance zero.
@@ -1104,7 +1108,8 @@ class RaceTraceGPS extends HTMLElement {
    const useLearned=this.referenceMode==='learned'&&!!learned;
    const stableTypical=typical;
    const firstCross=events.find(e=>String(e[0])===referenceId&&e[1]===raceStartDistance);
-   const originTime=firstCross?.[2]??crossingAt(ref,raceStartDistance);
+   const originTime=provisional?ref[0][2]:
+    (firstCross?.[2]??crossingAt(ref,raceStartDistance));
    // Normalised lap-time shape is shared by all drivers. Anchor it to
    // the reference car at its first racing lap crossing.
    const referenceAdjustment=this.referenceLapAdjustment;
