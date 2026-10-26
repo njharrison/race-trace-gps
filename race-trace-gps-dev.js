@@ -1176,6 +1176,26 @@ class RaceTraceGPS extends HTMLElement {
    // Keep GPS samples as X coordinates; do not rebuild timestamps from laps.
    // View-only redraws reuse the exact completed gap series. Recompute only
    // when recording data or a calculation setting changes.
+   const gapNeutralPeriods=[];
+   let gapNeutral=null;
+   const gapNeutralType=value=>{
+    const s=String(value??'').trim().toUpperCase();
+    if(!s)return undefined;
+    if(/^(VSC|VIRTUAL SAFETY CAR|VIRTUAL SAFETY CAR DEPLOYED)$/.test(s))return 'VSC';
+    if(/^(SC|SAFETY CAR|SAFETY CAR DEPLOYED)$/.test(s))return 'SC';
+    if(/^(1|GREEN|CLEAR|ALL CLEAR|NORMAL)$/.test(s))return null;
+    return undefined;
+   };
+   for(const sample of this.timing.samples){
+    const type=gapNeutralType(sample.track_status);
+    const t=sample.session_timestamp;
+    if(type===undefined||!Number.isFinite(t))continue;
+    if(type!==gapNeutral?.type){
+     if(gapNeutral){gapNeutral.end=t;gapNeutralPeriods.push(gapNeutral);}
+     gapNeutral=type?{type,start:t,end:Infinity}:null;
+    }
+   }
+   if(gapNeutral)gapNeutralPeriods.push(gapNeutral);
    const gapKey=JSON.stringify([this.processedKey,this.referenceLapAdjustment,
     this.fuelEffect,this.smoothingSeconds,this.useDriverProfiles,
     this.applyTimingCorrections]);
@@ -1284,7 +1304,7 @@ class RaceTraceGPS extends HTMLElement {
     const middle=Math.floor(values.length/2);
     return values.length%2?values[middle]:(values[middle-1]+values[middle])/2;
    };
-   for(const p of neutralPeriods){
+   for(const p of gapNeutralPeriods){
     if(p.start>ref.at(-1)[2])break;
     const from=refDistanceAtTimestamp(p.start);
     const to=refDistanceAtTimestamp(Math.min(p.end,ref.at(-1)[2]));
