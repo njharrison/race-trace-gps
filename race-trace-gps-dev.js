@@ -922,6 +922,30 @@ class RaceTraceGPS extends HTMLElement {
     }
     return null;
    }
+   const neutralPeriods=[];
+   let neutral=null;
+   const neutralType=value=>{
+    const s=String(value??'').trim().toUpperCase();
+    if(!s)return undefined;
+    if(/^(VSC|VIRTUAL SAFETY CAR|VIRTUAL SAFETY CAR DEPLOYED)$/.test(s))return 'VSC';
+    if(/^(SC|SAFETY CAR|SAFETY CAR DEPLOYED)$/.test(s))return 'SC';
+    if(/^(1|GREEN|CLEAR|ALL CLEAR|NORMAL)$/.test(s))return null;
+    return undefined;
+   };
+   for(const sample of this.timing.samples){
+    const type=neutralType(sample.track_status);
+    const t=sample.session_timestamp;
+    if(type===undefined||!Number.isFinite(t))continue;
+    if(type!==neutral?.type){
+     if(neutral){neutral.end=t;neutralPeriods.push(neutral);}
+     neutral=type?{type,start:t,end:Infinity}:null;
+    }
+   }
+   if(neutral)neutralPeriods.push(neutral);
+   // Reject every lap that overlaps a safety-car or virtual-safety-car
+   // interval, including partial laps at deployment and restart. Do not
+   // cache these as clean laps or use them for driver-specific profiles.
+   const neutralOverlaps=(t0,t1)=>neutralPeriods.some(p=>t0<p.end&&t1>p.start);
    // Cache completed lap profiles. A lap is immutable after its following
    // crossing is recorded; only new completed laps require 101 interpolations.
    const cleanLaps=[];
@@ -931,10 +955,14 @@ class RaceTraceGPS extends HTMLElement {
     for(let lap=Math.max(0,Math.ceil(monotone[0][1]));lap<monotone.at(-1)[1];lap++){
      const cacheKey=id+':'+lap;
      liveLapKeys.add(cacheKey);
+     const lapStart=crossingAt(monotone,lap),lapEnd=crossingAt(monotone,lap+1);
+     if(!Number.isFinite(lapStart)||!Number.isFinite(lapEnd)||neutralOverlaps(lapStart,lapEnd)){
+      this.lapProfileCache.delete(cacheKey);continue;
+     }
      let entry=this.lapProfileCache.get(cacheKey);
      if(!entry){
       const t0=crossingAt(monotone,lap),t1=crossingAt(monotone,lap+1);
-      if(t0===null||t1===null)continue;
+      if(t0===null||t1===null||neutralOverlaps(t0,t1))continue;
       const duration=t1-t0;
       if(duration<75||duration>180)continue;
       const bins=[];
@@ -1006,9 +1034,13 @@ class RaceTraceGPS extends HTMLElement {
     const end=Math.floor(track.at(-1)[1]);
     for(let lap=first;lap<end;lap++){
      const cached=this.lapProfileCache.get(id+':'+lap);
-     if(cached){samples.push(cached);continue;}
+     if(cached){
+      const t0=crossingAt(track,lap),t1=crossingAt(track,lap+1);
+      if(Number.isFinite(t0)&&Number.isFinite(t1)&&!neutralOverlaps(t0,t1))samples.push(cached);
+      continue;
+     }
      const t0=crossingAt(track,lap),t1=crossingAt(track,lap+1);
-     if(!Number.isFinite(t0)||!Number.isFinite(t1))continue;
+     if(!Number.isFinite(t0)||!Number.isFinite(t1)||neutralOverlaps(t0,t1))continue;
      const duration=t1-t0;
      if(duration<75||duration>180)continue;
      const bins=[];
@@ -1206,26 +1238,6 @@ class RaceTraceGPS extends HTMLElement {
    // slowdown relative to the ordinary racing reference, beginning at the
    // neutralisation's first recorded position. The offset is retained after
    // green so there is no discontinuity in the gap chart.
-   const neutralPeriods=[];
-   let neutral=null;
-   const neutralType=value=>{
-    const s=String(value??'').trim().toUpperCase();
-    if(!s)return undefined;
-    if(/^(VSC|VIRTUAL SAFETY CAR|VIRTUAL SAFETY CAR DEPLOYED)$/.test(s))return 'VSC';
-    if(/^(SC|SAFETY CAR|SAFETY CAR DEPLOYED)$/.test(s))return 'SC';
-    if(/^(1|GREEN|CLEAR|ALL CLEAR|NORMAL)$/.test(s))return null;
-    return undefined;
-   };
-   for(const sample of this.timing.samples){
-    const type=neutralType(sample.track_status);
-    const t=sample.session_timestamp;
-    if(type===undefined||!Number.isFinite(t))continue;
-    if(type!==neutral?.type){
-     if(neutral){neutral.end=t;neutralPeriods.push(neutral);}
-     neutral=type?{type,start:t,end:Infinity}:null;
-    }
-   }
-   if(neutral)neutralPeriods.push(neutral);
    const refTimeAtDistance=d=>{
     if(d<ref[0][1]||d>ref.at(-1)[1])return null;
     let lo=0,hi=ref.length-1;
