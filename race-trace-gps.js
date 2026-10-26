@@ -1857,7 +1857,7 @@ class RaceTraceGPS extends HTMLElement {
      ctx.save();ctx.strokeStyle=color;ctx.lineWidth=1.8;
      ctx.globalAlpha=alpha;ctx.setLineDash([2,5]);ctx.beginPath();
      chosen.forEach((p,j)=>{
-      const px=x(p[0]-sign*distanceOffset);
+      const px=x(p[0]+sign*distanceOffset);
       const py=y(p[1]+sign*loss);
       if(j)ctx.lineTo(px,py);else ctx.moveTo(px,py);
      });
