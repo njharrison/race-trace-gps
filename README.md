@@ -4,6 +4,16 @@ Experimental Home Assistant GPS-based F1 race trace, independently installable t
 
 **Status:** early prototype. This now plots time gap at equal race distance, using the furthest-progressed car as a reference. It is an initial gap renderer, **not yet** the full approved Singapore visualisation. It currently downloads both full recordings every five seconds, so do not leave it running for long races until incremental loading is added. Production `custom:f1-race-trace` is unaffected.
 
+## Update channels (recommended)
+
+**Stable HACS channel:** Install this repository as a HACS Dashboard custom repository. HACS delivers `race-trace-gps.js` from the repository's published version. Use tagged, tested releases for stable updates. The existing production `custom:f1-race-trace` card is independent and is not replaced.
+
+**Experimental channel:** Keep `race-trace-gps-dev.js` for development testing only. Avoid registering both the HACS module and a GitHub Pages module that define the same custom element. Test experimental changes separately before copying them to the stable module and publishing a release.
+
+**Recorder channel:** GPS and timing recording are updated through the `home-assistant-f1-race-trace` Home Assistant add-on. Changes to its Python code require a new add-on version and installation through Home Assistant; changing a dashboard resource cannot update the recorder.
+
+**Release checklist:** (1) verify regression tests including recording fixtures where relevant; (2) verify replay pause/resume and GPS/timing alignment; (3) update the stable JS bundle only after testing; (4) create a version tag/release; (5) install the HACS update and reload the dashboard. No manual resource URL or cache-busting version change is required for routine stable updates.
+
 ## Fast development via GitHub Pages
 
 The `.github/workflows/pages.yml` workflow publishes `race-trace-gps.js` on each main-branch update. Enable **Settings → Pages → Build and deployment → GitHub Actions** once. After the deployment succeeds, the development module is available at:
